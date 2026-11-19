@@ -1,0 +1,40 @@
+name: Build StarLED Remote APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Create & Configure Flutter Project
+        run: |
+          flutter create starled_app
+          cp main.dart starled_app/lib/main.dart
+          cd starled_app
+          flutter pub add ir_sensor_plugin
+          sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+
+      - name: Build APK
+        run: |
+          cd starled_app
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarLED-Remote-APK
+          path: starled_app/build/app/outputs/flutter-apk/app-release.apk

@@ -22,16 +22,19 @@ jobs:
 
       - name: Create & Configure Flutter Project
         run: |
-          flutter create starled_app
+          flutter create --org com.starled.remote starled_app
           cp main.dart starled_app/lib/main.dart
           cd starled_app
           flutter pub add ir_sensor_plugin
           sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          # ضبط SDK وإصلاح توافق الحزم القديمة مع Gradle الحديث
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/' android/app/build.gradle* || true
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/' android/app/build.gradle* || true
 
       - name: Build APK
         run: |
           cd starled_app
-          flutter build apk --release
+          flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

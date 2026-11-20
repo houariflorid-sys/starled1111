@@ -32,15 +32,17 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
 
+  // عنوان شاسيه تلفاز AMW المؤكد (0x04FB بترتيب MSB-First)
   final int _address = 0x04FB;
 
-  // الخريطة المصححة والمؤكدة من شاشتك للوحة AMW (0x04FB MSB)
+  // خريطة الأكواد الكاملة لكل زر
   final Map<String, int> _keys = const {
-    'POWER': 0x12,    // التشغيل والإيقاف (تم تأكيده عملياً من شاشتك!)
-    'SOURCE': 0x02,   // مصادر الإدخال HDMI/AV (تم تأكيده عملياً!)
+    'POWER': 0x12,    // التشغيل والإيقاف
+    'SOURCE': 0x02,   // مصادر الإدخال (HDMI / PC / AV)
+    'GUIDE': 0x0A,    // دليل البرامج (EPG)
     'MUTE': 0x1C,     // كتم الصوت
-    '1': 0x00,        // رقم 1 (تم تأكيده عملياً!)
-    '2': 0x08,        // رقم 2 (تم تأكيده عملياً!)
+    '1': 0x00,        // رقم 1
+    '2': 0x08,        // رقم 2
     '3': 0x04,        // رقم 3
     '4': 0x0C,        // رقم 4
     '5': 0x10,        // رقم 5
@@ -60,7 +62,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     'DOWN': 0x1D,     // سهم للأسفل
     'LEFT': 0x17,     // سهم لليسار
     'RIGHT': 0x16,    // سهم لليمين
-    'GUIDE': 0x0A,    // دليل البرامج (تم تأكيده من شاشتك!)
   };
 
   @override
@@ -114,7 +115,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
         'pattern': pattern,
         'frequency': 38000,
       });
-      setState(() => _status = "تم تنفيذ: $arabicLabel (0x${cmd.toRadixString(16).toUpperCase()})");
+      setState(() => _status = "$arabicLabel (0x${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')})");
     } catch (e) {
       setState(() => _status = "فشل الإرسال");
     }
@@ -166,8 +167,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // الصف العلوي: التشغيل - المصادر - كتم الصوت - الدليل
               Row(
                 children: [
                   Expanded(child: _btn("POWER", "POWER", "تشغيل / إيقاف", color: Colors.red.shade700, icon: Icons.power_settings_new)),
@@ -180,8 +179,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-
-              // لوحة الأرقام
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -205,8 +202,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-
-              // الصوت + الأسهم + القنوات
               Row(
                 children: [
                   Expanded(

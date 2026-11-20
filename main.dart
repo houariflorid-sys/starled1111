@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ir_sensor_plugin/ir_sensor_plugin.dart';
 
 void main() {
   runApp(const StarLedRemoteApp());
@@ -14,7 +13,7 @@ class StarLedRemoteApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        scaffoldBackgroundColor: const Color(0xFF0B1120),
       ),
       home: const StarLedRemoteScreen(),
     );
@@ -29,13 +28,11 @@ class StarLedRemoteScreen extends StatefulWidget {
 }
 
 class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
+  static const MethodChannel _irChannel = MethodChannel('starled_ir_channel');
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
+  int _addressCode = 0x807F;
 
-  // كود الشاسيه القياسي لتلفاز StarLED HK320DF (Profile 6)
-  static const int _addressCode = 0x807F;
-
-  // أكواد الأوامر القياسية لبروتوكول NEC (0x807F)
   final Map<String, int> _commands = {
     'POWER': 0x12,
     'MUTE': 0x10,
@@ -71,36 +68,36 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
 
   Future<void> _checkIrSensor() async {
     try {
-      final bool hasIr = await IrSensorPlugin.hasIrEmitter;
+      final bool hasIr = await _irChannel.invokeMethod('hasIrEmitter');
       setState(() {
         _hasIrEmitter = hasIr;
         _status = hasIr
-            ? "مستشعر IR جاهز (StarLED 0x807F)"
+            ? "مستشعر IR جاهز (0x${_addressCode.toRadixString(16).toUpperCase()})"
             : "الهاتف لا يدعم IR أو الإذن مرفوض";
       });
-    } on PlatformException {
+    } catch (e) {
       setState(() {
-        _status = "خطأ في الوصول إلى مستشعر IR";
+        _status = "خطأ في فحص مستشعر IR";
       });
     }
   }
 
-  /// تحويل كود NEC 16-bit Address + 8-bit Command إلى مصفوفة نبضات بالميكروثانية
+  void _toggleAddressCode() {
+    setState(() {
+      _addressCode = (_addressCode == 0x807F) ? 0xFE01 : 0x807F;
+      _status = "تم التبديل إلى الكود: 0x${_addressCode.toRadixString(16).toUpperCase()}";
+    });
+  }
+
   List<int> _buildNecPattern(int address, int command) {
-    List<int> pattern = [];
+    List<int> pattern = [9000, 4500];
 
-    // نبضة البداية القياسية لبروتوكول NEC (9ms نبضة + 4.5ms فراغ)
-    pattern.add(9000);
-    pattern.add(4500);
-
-    // 1. إرسال العنوان (16 بت - LSB First)
     for (int i = 0; i < 16; i++) {
-      pattern.add(560); // Mark
+      pattern.add(560);
       bool bit = ((address >> i) & 1) == 1;
-      pattern.add(bit ? 1690 : 560); // Space (1 = 1690us, 0 = 560us)
+      pattern.add(bit ? 1690 : 560);
     }
 
-    // 2. إرسال الأمر (8 بت) ثم معكوس الأمر (8 بت للتحقق)
     int invertedCommand = (~command) & 0xFF;
     int fullCommand = (invertedCommand << 8) | (command & 0xFF);
 
@@ -110,16 +107,15 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       pattern.add(bit ? 1690 : 560);
     }
 
-    // نبضة الإغلاق النهائية
     pattern.add(560);
     return pattern;
   }
 
   Future<void> _sendKey(String keyName) async {
-    HapticFeedback.lightImpact();
+    HapticFeedback.mediumImpact();
     if (!_hasIrEmitter) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("مستشعر IR غير متاح على هذا الجهاز")),
+        const SnackBar(content: Text("مستشعر IR غير متاح على هذا الهاتف")),
       );
       return;
     }
@@ -129,25 +125,28 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
 
     final List<int> pattern = _buildNecPattern(_addressCode, cmd);
     try {
-      await IrSensorPlugin.transmitListInt(list: pattern);
-      setState(() => _status = "تم إرسال: $keyName (0x${cmd.toRadixString(16).toUpperCase()})");
+      await _irChannel.invokeMethod('transmit', {'pattern': pattern});
+      setState(() => _status = "أُرسل: $keyName (0x${cmd.toRadixString(16).toUpperCase()})");
     } catch (e) {
       setState(() => _status = "فشل الإرسال: $e");
     }
   }
 
-  Widget _buildButton(String label, String keyName, {Color? color, IconData? icon}) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color ?? const Color(0xFF1E293B),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  Widget _btn(String label, String keyName, {Color? color, IconData? icon, double height = 48}) {
+    return SizedBox(
+      height: height,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color ?? const Color(0xFF1E293B),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: () => _sendKey(keyName),
+        child: icon != null
+            ? Icon(icon, size: 22)
+            : Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
       ),
-      onPressed: () => _sendKey(keyName),
-      child: icon != null
-          ? Icon(icon, size: 24)
-          : Text(label, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -155,74 +154,118 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("StarLED HK320DF Remote"),
-        centerTitle: true,
+        title: const Text("StarLED HK320DF", style: TextStyle(fontSize: 18)),
         backgroundColor: const Color(0xFF1E293B),
+        actions: [
+          TextButton.icon(
+            onPressed: _toggleAddressCode,
+            icon: const Icon(Icons.swap_horiz, color: Colors.amberAccent, size: 20),
+            label: Text(
+              "0x${_addressCode.toRadixString(16).toUpperCase()}",
+              style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+            ),
+          )
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _hasIrEmitter ? Colors.teal.withOpacity(0.2) : Colors.red.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(14.0),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: _hasIrEmitter ? Colors.teal.withOpacity(0.15) : Colors.red.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _hasIrEmitter ? Colors.tealAccent.withOpacity(0.4) : Colors.redAccent),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.settings_remote, size: 18, color: _hasIrEmitter ? Colors.tealAccent : Colors.redAccent),
+                    const SizedBox(width: 8),
+                    Text(_status, style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              const SizedBox(height: 14),
+              Row(
                 children: [
-                  Icon(Icons.settings_remote, color: _hasIrEmitter ? Colors.tealAccent : Colors.redAccent),
-                  const SizedBox(width: 8),
-                  Text(_status, style: const TextStyle(fontSize: 14)),
+                  Expanded(child: _btn("POWER", "POWER", color: Colors.red.shade700, icon: Icons.power_settings_new)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _btn("SOURCE", "SOURCE", color: Colors.indigo.shade700)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _btn("MUTE", "MUTE", color: Colors.teal.shade700, icon: Icons.volume_off)),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-            // أزرار الطاقة وكتم الصوت
-            Row(
-              children: [
-                Expanded(child: _buildButton("POWER", "POWER", color: Colors.red.shade700, icon: Icons.power_settings_new)),
-                const SizedBox(width: 16),
-                Expanded(child: _buildButton("MUTE", "MUTE", color: Colors.teal.shade700, icon: Icons.volume_off)),
-              ],
-            ),
-            const SizedBox(height: 20),
-            // لوحة الأرقام
-            Expanded(
-              child: GridView.count(
+              const SizedBox(height: 14),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 3,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.6,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 2.1,
                 children: [
-                  for (var num in ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'SOURCE', '0', 'MENU'])
-                    _buildButton(num, num),
+                  for (var num in ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MENU', '0', 'EXIT'])
+                    _btn(
+                      num,
+                      num,
+                      color: (num == 'MENU' || num == 'EXIT') ? const Color(0xFF334155) : null,
+                    ),
                 ],
               ),
-            ),
-            // التحكم بالصوت والقنوات
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Column(
-                  children: [
-                    _buildButton("VOL +", "VOL_UP"),
-                    const SizedBox(height: 8),
-                    _buildButton("VOL -", "VOL_DOWN"),
-                  ],
-                ),
-                _buildButton("OK", "OK", color: Colors.blueGrey.shade700),
-                Column(
-                  children: [
-                    _buildButton("CH +", "CH_UP"),
-                    const SizedBox(height: 8),
-                    _buildButton("CH -", "CH_DOWN"),
-                  ],
-                ),
-              ],
-            ),
-          ],
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      children: [
+                        _btn("VOL +", "VOL_UP", height: 54),
+                        const SizedBox(height: 10),
+                        _btn("VOL -", "VOL_DOWN", height: 54),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 4,
+                    child: Column(
+                      children: [
+                        SizedBox(width: 70, child: _btn("UP", "UP", icon: Icons.keyboard_arrow_up)),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Expanded(child: _btn("LEFT", "LEFT", icon: Icons.keyboard_arrow_left)),
+                            const SizedBox(width: 6),
+                            Expanded(child: _btn("OK", "OK", color: Colors.blue.shade700)),
+                            const SizedBox(width: 6),
+                            Expanded(child: _btn("RIGHT", "RIGHT", icon: Icons.keyboard_arrow_right)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(width: 70, child: _btn("DOWN", "DOWN", icon: Icons.keyboard_arrow_down)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      children: [
+                        _btn("CH +", "CH_UP", height: 54),
+                        const SizedBox(height: 10),
+                        _btn("CH -", "CH_DOWN", height: 54),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

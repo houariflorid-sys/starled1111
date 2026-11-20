@@ -1,13 +1,12 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 void main() {
-  runApp(const StarLedRemoteApp());
+  runApp(const AmwRemoteApp());
 }
 
-class StarLedRemoteApp extends StatelessWidget {
-  const StarLedRemoteApp({super.key});
+class AmwRemoteApp extends StatelessWidget {
+  const AmwRemoteApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -16,328 +15,137 @@ class StarLedRemoteApp extends StatelessWidget {
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0B1120),
       ),
-      home: const StarLedRemoteScreen(),
+      home: const AmwRemoteScreen(),
     );
   }
 }
 
-enum IrProtocol { nec, toshiba, samsung, rc5 }
-
-class ChassisProfile {
-  final String name;
-  final IrProtocol protocol;
+class AmwKeyMap {
+  final String label;
   final int frequency;
+  final bool isRc5;
   final int address;
-  final int powerCmd;
-  final int volUpCmd;
-  final int volDownCmd;
-  final int chUpCmd;
-  final int chDownCmd;
-  final int muteCmd;
-  final int menuCmd;
-  final int sourceCmd;
-  final int okCmd;
-  final int upCmd;
-  final int downCmd;
-  final int leftCmd;
-  final int rightCmd;
-  final int exitCmd;
-  final List<int> digits;
+  final Map<String, int> keys;
 
-  const ChassisProfile({
-    required this.name,
-    required this.protocol,
+  const AmwKeyMap({
+    required this.label,
     this.frequency = 38000,
+    this.isRc5 = false,
     required this.address,
-    required this.powerCmd,
-    required this.volUpCmd,
-    required this.volDownCmd,
-    required this.chUpCmd,
-    required this.chDownCmd,
-    required this.muteCmd,
-    required this.menuCmd,
-    required this.sourceCmd,
-    required this.okCmd,
-    required this.upCmd,
-    required this.downCmd,
-    required this.leftCmd,
-    required this.rightCmd,
-    required this.exitCmd,
-    required this.digits,
+    required this.keys,
   });
 }
 
-class StarLedRemoteScreen extends StatefulWidget {
-  const StarLedRemoteScreen({super.key});
+class AmwRemoteScreen extends StatefulWidget {
+  const AmwRemoteScreen({super.key});
 
   @override
-  State<StarLedRemoteScreen> createState() => _StarLedRemoteScreenState();
+  State<AmwRemoteScreen> createState() => _AmwRemoteScreenState();
 }
 
-class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
+class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   static const MethodChannel _irChannel = MethodChannel('starled_ir_channel');
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
-  int _profileIndex = 0;
-  bool _isScanning = false;
-  bool _rc5ToggleBit = false;
-  Timer? _scanTimer;
+  int _selectedMap = 0;
+  bool _rc5Toggle = false;
 
-  // قائمة البروفايلات الشاملة (Toshiba + Samsung + RC5 + لوحات StarLED الصينية)
-  final List<ChassisProfile> _profiles = const [
-    // 1. بروتوكول Toshiba (0x40BF / 9000-4500) - شائع جداً في شاشات StarLED الحديثة
-    ChassisProfile(
-      name: "P1: Toshiba-A (0x40BF)",
-      protocol: IrProtocol.toshiba,
-      address: 0x40BF,
-      powerCmd: 0x12,
-      volUpCmd: 0x1A,
-      volDownCmd: 0x1E,
-      chUpCmd: 0x1B,
-      chDownCmd: 0x1F,
-      muteCmd: 0x10,
-      menuCmd: 0x5B,
-      sourceCmd: 0x0F,
-      okCmd: 0x21,
-      upCmd: 0x19,
-      downCmd: 0x1D,
-      leftCmd: 0x42,
-      rightCmd: 0x40,
-      exitCmd: 0x3B,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 2. بروتوكول Toshiba-B (نبضة بداية 4500-4500 مثل Samsung)
-    ChassisProfile(
-      name: "P2: Toshiba-B (0x40BF-4.5)",
-      protocol: IrProtocol.samsung,
-      address: 0x40BF,
-      powerCmd: 0x12,
-      volUpCmd: 0x1A,
-      volDownCmd: 0x1E,
-      chUpCmd: 0x1B,
-      chDownCmd: 0x1F,
-      muteCmd: 0x10,
-      menuCmd: 0x5B,
-      sourceCmd: 0x0F,
-      okCmd: 0x21,
-      upCmd: 0x19,
-      downCmd: 0x1D,
-      leftCmd: 0x42,
-      rightCmd: 0x40,
-      exitCmd: 0x3B,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 3. بروتوكول Samsung القياسي (0x0707)
-    ChassisProfile(
-      name: "P3: Samsung TV (0x0707)",
-      protocol: IrProtocol.samsung,
-      address: 0x0707,
-      powerCmd: 0x02,
-      volUpCmd: 0x07,
-      volDownCmd: 0x0B,
-      chUpCmd: 0x12,
-      chDownCmd: 0x10,
-      muteCmd: 0x0F,
-      menuCmd: 0x1A,
-      sourceCmd: 0x01,
-      okCmd: 0x68,
-      upCmd: 0x60,
-      downCmd: 0x61,
-      leftCmd: 0x65,
-      rightCmd: 0x62,
-      exitCmd: 0x2D,
-      digits: [0x11, 0x04, 0x05, 0x06, 0x08, 0x09, 0x0A, 0x0C, 0x0D, 0x0E],
-    ),
-    // 4. بروتوكول Philips / Vestel RC5 (تردد 36kHz - النظام 0)
-    ChassisProfile(
-      name: "P4: RC5 Standard (Sys 0)",
-      protocol: IrProtocol.rc5,
-      frequency: 36000,
-      address: 0x00,
-      powerCmd: 0x0C,
-      volUpCmd: 0x10,
-      volDownCmd: 0x11,
-      chUpCmd: 0x20,
-      chDownCmd: 0x21,
-      muteCmd: 0x0D,
-      menuCmd: 0x30,
-      sourceCmd: 0x38,
-      okCmd: 0x35,
-      upCmd: 0x14,
-      downCmd: 0x13,
-      leftCmd: 0x15,
-      rightCmd: 0x16,
-      exitCmd: 0x37,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 5. بروتوكول RC5 البديل (تردد 38kHz - النظام 0)
-    ChassisProfile(
-      name: "P5: RC5 38kHz (Sys 0)",
-      protocol: IrProtocol.rc5,
-      frequency: 38000,
-      address: 0x00,
-      powerCmd: 0x0C,
-      volUpCmd: 0x10,
-      volDownCmd: 0x11,
-      chUpCmd: 0x20,
-      chDownCmd: 0x21,
-      muteCmd: 0x0D,
-      menuCmd: 0x30,
-      sourceCmd: 0x38,
-      okCmd: 0x35,
-      upCmd: 0x14,
-      downCmd: 0x13,
-      leftCmd: 0x15,
-      rightCmd: 0x16,
-      exitCmd: 0x37,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 6. لوحات CVTE / StarLED (0x00FF)
-    ChassisProfile(
-      name: "P6: StarLED CVTE (0x00FF)",
-      protocol: IrProtocol.nec,
-      address: 0x00FF,
-      powerCmd: 0x0D,
-      volUpCmd: 0x15,
-      volDownCmd: 0x16,
-      chUpCmd: 0x13,
-      chDownCmd: 0x14,
-      muteCmd: 0x0E,
-      menuCmd: 0x1A,
-      sourceCmd: 0x0C,
-      okCmd: 0x1F,
-      upCmd: 0x1B,
-      downCmd: 0x1C,
-      leftCmd: 0x1D,
-      rightCmd: 0x1E,
-      exitCmd: 0x19,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 7. لوحات StarLED Universal-A (0x04FB)
-    ChassisProfile(
-      name: "P7: StarLED Univ-A (0x04FB)",
-      protocol: IrProtocol.nec,
+  // الخرائط الثلاث الدقيقة والمطابقة لوظائف أزرار AMW TV (RID: 5904)
+  final List<AmwKeyMap> _amwMaps = const [
+    // الخريطة 1: خريطة AMW / LG-OEM القياسية (0x04FB) - كل زر في وظيفته الدقيقة
+    AmwKeyMap(
+      label: "AMW 5904 - خريطة 1 (الأساسية)",
       address: 0x04FB,
-      powerCmd: 0x08,
-      volUpCmd: 0x02,
-      volDownCmd: 0x03,
-      chUpCmd: 0x00,
-      chDownCmd: 0x01,
-      muteCmd: 0x09,
-      menuCmd: 0x43,
-      sourceCmd: 0x0B,
-      okCmd: 0x44,
-      upCmd: 0x40,
-      downCmd: 0x41,
-      leftCmd: 0x07,
-      rightCmd: 0x06,
-      exitCmd: 0x5B,
-      digits: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19],
+      keys: {
+        'POWER': 0x08,
+        'MUTE': 0x09,
+        'SOURCE': 0x0B,
+        'VOL_UP': 0x02,
+        'VOL_DOWN': 0x03,
+        'CH_UP': 0x00,
+        'CH_DOWN': 0x01,
+        'MENU': 0x43,
+        'EXIT': 0x5B,
+        'OK': 0x44,
+        'UP': 0x40,
+        'DOWN': 0x41,
+        'LEFT': 0x07,
+        'RIGHT': 0x06,
+        '0': 0x10,
+        '1': 0x11,
+        '2': 0x12,
+        '3': 0x13,
+        '4': 0x14,
+        '5': 0x15,
+        '6': 0x16,
+        '7': 0x17,
+        '8': 0x18,
+        '9': 0x19,
+      },
     ),
-    // 8. لوحات MStar / StarLED (0x08F7)
-    ChassisProfile(
-      name: "P8: MStar Board (0x08F7)",
-      protocol: IrProtocol.nec,
-      address: 0x08F7,
-      powerCmd: 0x0B,
-      volUpCmd: 0x12,
-      volDownCmd: 0x13,
-      chUpCmd: 0x10,
-      chDownCmd: 0x11,
-      muteCmd: 0x0E,
-      menuCmd: 0x19,
-      sourceCmd: 0x0F,
-      okCmd: 0x1E,
-      upCmd: 0x1A,
-      downCmd: 0x1B,
-      leftCmd: 0x1C,
-      rightCmd: 0x1D,
-      exitCmd: 0x18,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+    // الخريطة 2: خريطة AMW / CVTE الأوروبية (0x00FF)
+    AmwKeyMap(
+      label: "AMW 5904 - خريطة 2 (بديلة A)",
+      address: 0x00FF,
+      keys: {
+        'POWER': 0x0D,
+        'MUTE': 0x0E,
+        'SOURCE': 0x0C,
+        'VOL_UP': 0x15,
+        'VOL_DOWN': 0x16,
+        'CH_UP': 0x13,
+        'CH_DOWN': 0x14,
+        'MENU': 0x1A,
+        'EXIT': 0x19,
+        'OK': 0x1F,
+        'UP': 0x1B,
+        'DOWN': 0x1C,
+        'LEFT': 0x1D,
+        'RIGHT': 0x1E,
+        '0': 0x00,
+        '1': 0x01,
+        '2': 0x02,
+        '3': 0x03,
+        '4': 0x04,
+        '5': 0x05,
+        '6': 0x06,
+        '7': 0x07,
+        '8': 0x08,
+        '9': 0x09,
+      },
     ),
-    // 9. لوحات HK320 (0x20DF)
-    ChassisProfile(
-      name: "P9: HK-Board (0x20DF)",
-      protocol: IrProtocol.nec,
-      address: 0x20DF,
-      powerCmd: 0x10,
-      volUpCmd: 0x40,
-      volDownCmd: 0xC0,
-      chUpCmd: 0x00,
-      chDownCmd: 0x80,
-      muteCmd: 0x90,
-      menuCmd: 0xC2,
-      sourceCmd: 0xD0,
-      okCmd: 0x22,
-      upCmd: 0x02,
-      downCmd: 0x82,
-      leftCmd: 0xE0,
-      rightCmd: 0x60,
-      exitCmd: 0xDA,
-      digits: [0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98],
-    ),
-    // 10. لوحات Hisense / StarLED (0x00BF)
-    ChassisProfile(
-      name: "P10: Hisense/Star (0x00BF)",
-      protocol: IrProtocol.nec,
-      address: 0x00BF,
-      powerCmd: 0x0D,
-      volUpCmd: 0x44,
-      volDownCmd: 0x43,
-      chUpCmd: 0x48,
-      chDownCmd: 0x49,
-      muteCmd: 0x0E,
-      menuCmd: 0x14,
-      sourceCmd: 0x12,
-      okCmd: 0x15,
-      upCmd: 0x16,
-      downCmd: 0x17,
-      leftCmd: 0x19,
-      rightCmd: 0x18,
-      exitCmd: 0x48,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 11. لوحات Skyworth / StarLED (0x0E0E)
-    ChassisProfile(
-      name: "P11: Skyworth/Star (0x0E0E)",
-      protocol: IrProtocol.nec,
-      address: 0x0E0E,
-      powerCmd: 0x0C,
-      volUpCmd: 0x10,
-      volDownCmd: 0x11,
-      chUpCmd: 0x20,
-      chDownCmd: 0x21,
-      muteCmd: 0x0D,
-      menuCmd: 0x54,
-      sourceCmd: 0x38,
-      okCmd: 0x5C,
-      upCmd: 0x58,
-      downCmd: 0x59,
-      leftCmd: 0x5A,
-      rightCmd: 0x5B,
-      exitCmd: 0x0A,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 12. لوحات TCL / Thomson (0xF00F)
-    ChassisProfile(
-      name: "P12: TCL/Star (0xF00F)",
-      protocol: IrProtocol.nec,
-      address: 0xF00F,
-      powerCmd: 0x0D,
-      volUpCmd: 0x10,
-      volDownCmd: 0x11,
-      chUpCmd: 0x20,
-      chDownCmd: 0x21,
-      muteCmd: 0x0E,
-      menuCmd: 0x54,
-      sourceCmd: 0x38,
-      okCmd: 0x5C,
-      upCmd: 0x58,
-      downCmd: 0x59,
-      leftCmd: 0x5A,
-      rightCmd: 0x5B,
-      exitCmd: 0x0A,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+    // الخريطة 3: خريطة AMW / Vestel RC5 (تردد 36kHz)
+    AmwKeyMap(
+      label: "AMW 5904 - خريطة 3 (RC5)",
+      frequency: 36000,
+      isRc5: true,
+      address: 0x00,
+      keys: {
+        'POWER': 0x0C,
+        'MUTE': 0x0D,
+        'SOURCE': 0x38,
+        'VOL_UP': 0x10,
+        'VOL_DOWN': 0x11,
+        'CH_UP': 0x20,
+        'CH_DOWN': 0x21,
+        'MENU': 0x30,
+        'EXIT': 0x37,
+        'OK': 0x35,
+        'UP': 0x14,
+        'DOWN': 0x13,
+        'LEFT': 0x15,
+        'RIGHT': 0x16,
+        '0': 0x00,
+        '1': 0x01,
+        '2': 0x02,
+        '3': 0x03,
+        '4': 0x04,
+        '5': 0x05,
+        '6': 0x06,
+        '7': 0x07,
+        '8': 0x08,
+        '9': 0x09,
+      },
     ),
   ];
 
@@ -347,26 +155,19 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
     _checkIrSensor();
   }
 
-  @override
-  void dispose() {
-    _scanTimer?.cancel();
-    super.dispose();
-  }
-
   Future<void> _checkIrSensor() async {
     try {
       final bool hasIr = await _irChannel.invokeMethod('hasIrEmitter');
       setState(() {
         _hasIrEmitter = hasIr;
-        _status = hasIr ? "جاهز - وجّه الكاميرا الخلفية للتلفاز" : "مستشعر IR غير متاح";
+        _status = hasIr ? "جاهز - AMW TV (RID: 5904)" : "مستشعر IR غير متاح";
       });
     } catch (e) {
       setState(() => _status = "خطأ في المستشعر");
     }
   }
 
-  /// توليد إطار NEC / Toshiba القياسي (9000us Mark + 4500us Space)
-  List<int> _buildNecOrToshibaFrame(int address, int command) {
+  List<int> _buildNecFrame(int address, int command) {
     List<int> frame = [9000, 4500];
     for (int i = 0; i < 16; i++) {
       frame.add(560);
@@ -381,34 +182,14 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       frame.add(bit ? 1690 : 560);
     }
     frame.add(560);
-    return frame;
+    return [...frame, 40000, ...frame];
   }
 
-  /// توليد إطار Samsung / Toshiba-B (4500us Mark + 4500us Space)
-  List<int> _buildSamsungFrame(int address, int command) {
-    List<int> frame = [4500, 4500];
-    for (int i = 0; i < 16; i++) {
-      frame.add(560);
-      bool bit = ((address >> i) & 1) == 1;
-      frame.add(bit ? 1690 : 560);
-    }
-    int invertedCommand = (~command) & 0xFF;
-    int fullCommand = (invertedCommand << 8) | (command & 0xFF);
-    for (int i = 0; i < 16; i++) {
-      frame.add(560);
-      bool bit = ((fullCommand >> i) & 1) == 1;
-      frame.add(bit ? 1690 : 560);
-    }
-    frame.add(560);
-    return frame;
-  }
-
-  /// توليد إطار Philips RC5 (ترميز مانشستر 889us لكل نصف بت)
   List<int> _buildRc5Frame(int systemAddr, int command) {
     List<int> bits = [
-      1, // Start bit 1
-      (command < 64) ? 1 : 0, // Start bit 2 (Field bit)
-      _rc5ToggleBit ? 1 : 0, // Toggle bit
+      1,
+      (command < 64) ? 1 : 0,
+      _rc5Toggle ? 1 : 0,
     ];
     for (int i = 4; i >= 0; i--) {
       bits.add((systemAddr >> i) & 1);
@@ -417,20 +198,17 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       bits.add((command >> i) & 1);
     }
 
-    // تحويل البتات إلى نبضات (Mark, Space, Mark, Space...)
-    // بت 1 = Space(889) ثم Mark(889) | بت 0 = Mark(889) ثم Space(889)
     List<int> raw = [];
     for (int b in bits) {
       if (b == 1) {
-        raw.add(-889); // Space
-        raw.add(889);  // Mark
+        raw.add(-889);
+        raw.add(889);
       } else {
-        raw.add(889);  // Mark
-        raw.add(-889); // Space
+        raw.add(889);
+        raw.add(-889);
       }
     }
 
-    // تجاهل الفراغ الأولي ودمج النبضات المتتالية من نفس النوع
     List<int> pattern = [];
     for (int val in raw) {
       if (pattern.isEmpty) {
@@ -448,99 +226,37 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
     if (pattern.length % 2 == 0) {
       pattern.removeLast();
     }
-    return pattern;
+    return [...pattern, 88000, ...pattern];
   }
 
-  /// بناء الإشارة النهائية مع تكرار النبضة مرتين (Double Repeat) لضمان الاستجابة
-  List<int> _buildFullSignalWithRepeat(ChassisProfile p, int cmd) {
-    List<int> singleFrame;
-    int gapMicros = 40000; // فاصل 40 مللي ثانية بين الإطارين
-
-    switch (p.protocol) {
-      case IrProtocol.toshiba:
-      case IrProtocol.nec:
-        singleFrame = _buildNecOrToshibaFrame(p.address, cmd);
-        break;
-      case IrProtocol.samsung:
-        singleFrame = _buildSamsungFrame(p.address, cmd);
-        gapMicros = 45000;
-        break;
-      case IrProtocol.rc5:
-        singleFrame = _buildRc5Frame(p.address, cmd);
-        gapMicros = 88000;
-        break;
-    }
-
-    // دمج الإطار مرتين مع الفاصل الزمني بينهما
-    return [...singleFrame, gapMicros, ...singleFrame];
-  }
-
-  int _getCommandForKey(ChassisProfile p, String key) {
-    switch (key) {
-      case 'POWER': return p.powerCmd;
-      case 'MUTE': return p.muteCmd;
-      case 'VOL_UP': return p.volUpCmd;
-      case 'VOL_DOWN': return p.volDownCmd;
-      case 'CH_UP': return p.chUpCmd;
-      case 'CH_DOWN': return p.chDownCmd;
-      case 'MENU': return p.menuCmd;
-      case 'SOURCE': return p.sourceCmd;
-      case 'OK': return p.okCmd;
-      case 'UP': return p.upCmd;
-      case 'DOWN': return p.downCmd;
-      case 'LEFT': return p.leftCmd;
-      case 'RIGHT': return p.rightCmd;
-      case 'EXIT': return p.exitCmd;
-      default:
-        int? d = int.tryParse(key);
-        if (d != null && d >= 0 && d <= 9) return p.digits[d];
-        return p.volUpCmd;
-    }
-  }
-
-  Future<void> _sendKey(String keyName) async {
+  Future<void> _sendKey(String keyName, String arabicName) async {
     HapticFeedback.mediumImpact();
     if (!_hasIrEmitter) return;
 
-    final p = _profiles[_profileIndex];
-    final int cmd = _getCommandForKey(p, keyName);
-    final List<int> pattern = _buildFullSignalWithRepeat(p, cmd);
+    final map = _amwMaps[_selectedMap];
+    final int? cmd = map.keys[keyName];
+    if (cmd == null) return;
 
-    if (p.protocol == IrProtocol.rc5) {
-      _rc5ToggleBit = !_rc5ToggleBit;
+    final List<int> pattern = map.isRc5
+        ? _buildRc5Frame(map.address, cmd)
+        : _buildNecFrame(map.address, cmd);
+
+    if (map.isRc5) {
+      _rc5Toggle = !_rc5Toggle;
     }
 
     try {
       await _irChannel.invokeMethod('transmit', {
         'pattern': pattern,
-        'frequency': p.frequency,
+        'frequency': map.frequency,
       });
-      setState(() => _status = "${p.name} (2x) -> $keyName");
+      setState(() => _status = "تم تنفيذ: $arabicName");
     } catch (e) {
-      setState(() => _status = "فشل الإرسال: $e");
+      setState(() => _status = "فشل الإرسال");
     }
   }
 
-  void _toggleAutoScan() {
-    if (_isScanning) {
-      _scanTimer?.cancel();
-      setState(() {
-        _isScanning = false;
-        _status = "تم التثبيت على: ${_profiles[_profileIndex].name}";
-      });
-    } else {
-      setState(() => _isScanning = true);
-      _sendKey('VOL_UP');
-      _scanTimer = Timer.periodic(const Duration(milliseconds: 1600), (timer) {
-        setState(() {
-          _profileIndex = (_profileIndex + 1) % _profiles.length;
-        });
-        _sendKey('VOL_UP');
-      });
-    }
-  }
-
-  Widget _btn(String label, String keyName, {Color? color, IconData? icon, double height = 46}) {
+  Widget _btn(String label, String keyName, String arabicName, {Color? color, IconData? icon, double height = 48}) {
     return SizedBox(
       height: height,
       child: ElevatedButton(
@@ -548,12 +264,12 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
           backgroundColor: color ?? const Color(0xFF1E293B),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 6),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        onPressed: () => _sendKey(keyName),
+        onPressed: () => _sendKey(keyName, arabicName),
         child: icon != null
-            ? Icon(icon, size: 22)
-            : Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            ? Icon(icon, size: 24)
+            : Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -562,93 +278,94 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("StarLED Multi-Protocol", style: TextStyle(fontSize: 16)),
+        title: const Text("AMW TV (5904)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1E293B),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isScanning ? Colors.red.shade700 : Colors.amber.shade700,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: _toggleAutoScan,
-              icon: Icon(_isScanning ? Icons.stop : Icons.radar, size: 18),
-              label: Text(_isScanning ? "إيقاف المسح" : "Auto-Scan"),
-            ),
-          )
-        ],
+        centerTitle: true,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.all(14.0),
           child: Column(
             children: [
+              // اختيار الخريطة الدقيقة لـ AMW 5904
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E293B),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.amberAccent.withOpacity(0.5)),
+                  border: Border.all(color: Colors.tealAccent.withOpacity(0.5)),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
-                    value: _profileIndex,
+                    value: _selectedMap,
                     isExpanded: true,
                     dropdownColor: const Color(0xFF1E293B),
-                    items: List.generate(_profiles.length, (index) {
+                    items: List.generate(_amwMaps.length, (i) {
                       return DropdownMenuItem(
-                        value: index,
+                        value: i,
                         child: Text(
-                          _profiles[index].name,
-                          style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                          _amwMaps[i].label,
+                          style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       );
                     }),
                     onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _profileIndex = val);
-                        _sendKey('VOL_UP');
-                      }
+                      if (val != null) setState(() => _selectedMap = val);
                     },
                   ),
                 ),
               ),
               const SizedBox(height: 8),
-              Text(_status, style: const TextStyle(fontSize: 13, color: Colors.tealAccent)),
-              const SizedBox(height: 12),
+              Text(_status, style: const TextStyle(fontSize: 13, color: Colors.amberAccent)),
+              const SizedBox(height: 14),
+
+              // الصف العلوي: التشغيل - المصادر - كتم الصوت
               Row(
                 children: [
-                  Expanded(child: _btn("POWER", "POWER", color: Colors.red.shade700, icon: Icons.power_settings_new)),
-                  const SizedBox(width: 8),
-                  Expanded(child: _btn("SOURCE", "SOURCE", color: Colors.indigo.shade700)),
-                  const SizedBox(width: 8),
-                  Expanded(child: _btn("MUTE", "MUTE", color: Colors.teal.shade700, icon: Icons.volume_off)),
+                  Expanded(child: _btn("POWER", "POWER", "تشغيل / إيقاف", color: Colors.red.shade700, icon: Icons.power_settings_new)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _btn("SOURCE", "SOURCE", "المصادر (HDMI/AV)", color: Colors.indigo.shade700)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _btn("MUTE", "MUTE", "كتم الصوت", color: Colors.teal.shade700, icon: Icons.volume_off)),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
+
+              // لوحة الأرقام
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 3,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
-                childAspectRatio: 2.2,
+                childAspectRatio: 2.1,
                 children: [
-                  for (var num in ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MENU', '0', 'EXIT'])
-                    _btn(num, num, color: (num == 'MENU' || num == 'EXIT') ? const Color(0xFF334155) : null),
+                  _btn("1", "1", "رقم 1"),
+                  _btn("2", "2", "رقم 2"),
+                  _btn("3", "3", "رقم 3"),
+                  _btn("4", "4", "رقم 4"),
+                  _btn("5", "5", "رقم 5"),
+                  _btn("6", "6", "رقم 6"),
+                  _btn("7", "7", "رقم 7"),
+                  _btn("8", "8", "رقم 8"),
+                  _btn("9", "9", "رقم 9"),
+                  _btn("MENU", "MENU", "القائمة", color: const Color(0xFF334155)),
+                  _btn("0", "0", "رقم 0"),
+                  _btn("EXIT", "EXIT", "خروج / رجوع", color: const Color(0xFF334155)),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
+
+              // الصوت + الأسهم + القنوات
               Row(
                 children: [
                   Expanded(
                     flex: 2,
                     child: Column(
                       children: [
-                        _btn("VOL +", "VOL_UP", height: 52),
-                        const SizedBox(height: 8),
-                        _btn("VOL -", "VOL_DOWN", height: 52),
+                        _btn("VOL +", "VOL_UP", "رفع الصوت", height: 54),
+                        const SizedBox(height: 10),
+                        _btn("VOL -", "VOL_DOWN", "خفض الصوت", height: 54),
                       ],
                     ),
                   ),
@@ -657,19 +374,19 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
                     flex: 4,
                     child: Column(
                       children: [
-                        SizedBox(width: 68, child: _btn("UP", "UP", icon: Icons.keyboard_arrow_up)),
+                        SizedBox(width: 72, child: _btn("UP", "UP", "سهم للأعلى", icon: Icons.keyboard_arrow_up)),
                         const SizedBox(height: 6),
                         Row(
                           children: [
-                            Expanded(child: _btn("LEFT", "LEFT", icon: Icons.keyboard_arrow_left)),
+                            Expanded(child: _btn("LEFT", "LEFT", "سهم لليسار", icon: Icons.keyboard_arrow_left)),
                             const SizedBox(width: 6),
-                            Expanded(child: _btn("OK", "OK", color: Colors.blue.shade700)),
+                            Expanded(child: _btn("OK", "OK", "تأكيد (OK)", color: Colors.blue.shade700)),
                             const SizedBox(width: 6),
-                            Expanded(child: _btn("RIGHT", "RIGHT", icon: Icons.keyboard_arrow_right)),
+                            Expanded(child: _btn("RIGHT", "RIGHT", "سهم لليمين", icon: Icons.keyboard_arrow_right)),
                           ],
                         ),
                         const SizedBox(height: 6),
-                        SizedBox(width: 68, child: _btn("DOWN", "DOWN", icon: Icons.keyboard_arrow_down)),
+                        SizedBox(width: 72, child: _btn("DOWN", "DOWN", "سهم للأسفل", icon: Icons.keyboard_arrow_down)),
                       ],
                     ),
                   ),
@@ -678,9 +395,9 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
                     flex: 2,
                     child: Column(
                       children: [
-                        _btn("CH +", "CH_UP", height: 52),
-                        const SizedBox(height: 8),
-                        _btn("CH -", "CH_DOWN", height: 52),
+                        _btn("CH +", "CH_UP", "القناة التالية", height: 54),
+                        const SizedBox(height: 10),
+                        _btn("CH -", "CH_DOWN", "القناة السابقة", height: 54),
                       ],
                     ),
                   ),

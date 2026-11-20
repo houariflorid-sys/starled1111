@@ -21,8 +21,12 @@ class StarLedRemoteApp extends StatelessWidget {
   }
 }
 
+enum IrProtocol { nec, toshiba, samsung, rc5 }
+
 class ChassisProfile {
   final String name;
+  final IrProtocol protocol;
+  final int frequency;
   final int address;
   final int powerCmd;
   final int volUpCmd;
@@ -38,10 +42,12 @@ class ChassisProfile {
   final int leftCmd;
   final int rightCmd;
   final int exitCmd;
-  final List<int> digits; // 0..9
+  final List<int> digits;
 
   const ChassisProfile({
     required this.name,
+    required this.protocol,
+    this.frequency = 38000,
     required this.address,
     required this.powerCmd,
     required this.volUpCmd,
@@ -74,13 +80,122 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
   String _status = "جاري فحص مستشعر IR...";
   int _profileIndex = 0;
   bool _isScanning = false;
+  bool _rc5ToggleBit = false;
   Timer? _scanTimer;
 
-  // أشهر 14 لوحة شاسيه لتلفزيونات StarLED واللوحات الصينية المتوافقة
+  // قائمة البروفايلات الشاملة (Toshiba + Samsung + RC5 + لوحات StarLED الصينية)
   final List<ChassisProfile> _profiles = const [
-    // 1. لوحات CVTE / T.VST القياسية (الأكثر شيوعاً في StarLED 32")
+    // 1. بروتوكول Toshiba (0x40BF / 9000-4500) - شائع جداً في شاشات StarLED الحديثة
     ChassisProfile(
-      name: "P1: StarLED CVTE (0x00FF)",
+      name: "P1: Toshiba-A (0x40BF)",
+      protocol: IrProtocol.toshiba,
+      address: 0x40BF,
+      powerCmd: 0x12,
+      volUpCmd: 0x1A,
+      volDownCmd: 0x1E,
+      chUpCmd: 0x1B,
+      chDownCmd: 0x1F,
+      muteCmd: 0x10,
+      menuCmd: 0x5B,
+      sourceCmd: 0x0F,
+      okCmd: 0x21,
+      upCmd: 0x19,
+      downCmd: 0x1D,
+      leftCmd: 0x42,
+      rightCmd: 0x40,
+      exitCmd: 0x3B,
+      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+    ),
+    // 2. بروتوكول Toshiba-B (نبضة بداية 4500-4500 مثل Samsung)
+    ChassisProfile(
+      name: "P2: Toshiba-B (0x40BF-4.5)",
+      protocol: IrProtocol.samsung,
+      address: 0x40BF,
+      powerCmd: 0x12,
+      volUpCmd: 0x1A,
+      volDownCmd: 0x1E,
+      chUpCmd: 0x1B,
+      chDownCmd: 0x1F,
+      muteCmd: 0x10,
+      menuCmd: 0x5B,
+      sourceCmd: 0x0F,
+      okCmd: 0x21,
+      upCmd: 0x19,
+      downCmd: 0x1D,
+      leftCmd: 0x42,
+      rightCmd: 0x40,
+      exitCmd: 0x3B,
+      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+    ),
+    // 3. بروتوكول Samsung القياسي (0x0707)
+    ChassisProfile(
+      name: "P3: Samsung TV (0x0707)",
+      protocol: IrProtocol.samsung,
+      address: 0x0707,
+      powerCmd: 0x02,
+      volUpCmd: 0x07,
+      volDownCmd: 0x0B,
+      chUpCmd: 0x12,
+      chDownCmd: 0x10,
+      muteCmd: 0x0F,
+      menuCmd: 0x1A,
+      sourceCmd: 0x01,
+      okCmd: 0x68,
+      upCmd: 0x60,
+      downCmd: 0x61,
+      leftCmd: 0x65,
+      rightCmd: 0x62,
+      exitCmd: 0x2D,
+      digits: [0x11, 0x04, 0x05, 0x06, 0x08, 0x09, 0x0A, 0x0C, 0x0D, 0x0E],
+    ),
+    // 4. بروتوكول Philips / Vestel RC5 (تردد 36kHz - النظام 0)
+    ChassisProfile(
+      name: "P4: RC5 Standard (Sys 0)",
+      protocol: IrProtocol.rc5,
+      frequency: 36000,
+      address: 0x00,
+      powerCmd: 0x0C,
+      volUpCmd: 0x10,
+      volDownCmd: 0x11,
+      chUpCmd: 0x20,
+      chDownCmd: 0x21,
+      muteCmd: 0x0D,
+      menuCmd: 0x30,
+      sourceCmd: 0x38,
+      okCmd: 0x35,
+      upCmd: 0x14,
+      downCmd: 0x13,
+      leftCmd: 0x15,
+      rightCmd: 0x16,
+      exitCmd: 0x37,
+      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+    ),
+    // 5. بروتوكول RC5 البديل (تردد 38kHz - النظام 0)
+    ChassisProfile(
+      name: "P5: RC5 38kHz (Sys 0)",
+      protocol: IrProtocol.rc5,
+      frequency: 38000,
+      address: 0x00,
+      powerCmd: 0x0C,
+      volUpCmd: 0x10,
+      volDownCmd: 0x11,
+      chUpCmd: 0x20,
+      chDownCmd: 0x21,
+      muteCmd: 0x0D,
+      menuCmd: 0x30,
+      sourceCmd: 0x38,
+      okCmd: 0x35,
+      upCmd: 0x14,
+      downCmd: 0x13,
+      leftCmd: 0x15,
+      rightCmd: 0x16,
+      exitCmd: 0x37,
+      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+    ),
+    // 6. لوحات CVTE / StarLED (0x00FF)
+    ChassisProfile(
+      name: "P6: StarLED CVTE (0x00FF)",
+      protocol: IrProtocol.nec,
       address: 0x00FF,
       powerCmd: 0x0D,
       volUpCmd: 0x15,
@@ -98,9 +213,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       exitCmd: 0x19,
       digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
     ),
-    // 2. لوحات StarLED Universal A
+    // 7. لوحات StarLED Universal-A (0x04FB)
     ChassisProfile(
-      name: "P2: StarLED Univ-A (0x04FB)",
+      name: "P7: StarLED Univ-A (0x04FB)",
+      protocol: IrProtocol.nec,
       address: 0x04FB,
       powerCmd: 0x08,
       volUpCmd: 0x02,
@@ -118,9 +234,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       exitCmd: 0x5B,
       digits: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19],
     ),
-    // 3. لوحات StarLED / MStar (0x08F7)
+    // 8. لوحات MStar / StarLED (0x08F7)
     ChassisProfile(
-      name: "P3: MStar Board (0x08F7)",
+      name: "P8: MStar Board (0x08F7)",
+      protocol: IrProtocol.nec,
       address: 0x08F7,
       powerCmd: 0x0B,
       volUpCmd: 0x12,
@@ -138,9 +255,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       exitCmd: 0x18,
       digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
     ),
-    // 4. لوحات Realtek / HK320 (0x20DF)
+    // 9. لوحات HK320 (0x20DF)
     ChassisProfile(
-      name: "P4: HK-Board (0x20DF)",
+      name: "P9: HK-Board (0x20DF)",
+      protocol: IrProtocol.nec,
       address: 0x20DF,
       powerCmd: 0x10,
       volUpCmd: 0x40,
@@ -158,9 +276,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       exitCmd: 0xDA,
       digits: [0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98],
     ),
-    // 5. لوحات Hisense / StarLED (0x00BF)
+    // 10. لوحات Hisense / StarLED (0x00BF)
     ChassisProfile(
-      name: "P5: Hisense/Star (0x00BF)",
+      name: "P10: Hisense/Star (0x00BF)",
+      protocol: IrProtocol.nec,
       address: 0x00BF,
       powerCmd: 0x0D,
       volUpCmd: 0x44,
@@ -178,9 +297,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       exitCmd: 0x48,
       digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
     ),
-    // 6. لوحات Skyworth / StarLED (0x0E0E)
+    // 11. لوحات Skyworth / StarLED (0x0E0E)
     ChassisProfile(
-      name: "P6: Skyworth/Star (0x0E0E)",
+      name: "P11: Skyworth/Star (0x0E0E)",
+      protocol: IrProtocol.nec,
       address: 0x0E0E,
       powerCmd: 0x0C,
       volUpCmd: 0x10,
@@ -198,69 +318,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       exitCmd: 0x0A,
       digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
     ),
-    // 7. لوحات Changhong / StarLED (0x40BF)
+    // 12. لوحات TCL / Thomson (0xF00F)
     ChassisProfile(
-      name: "P7: Changhong (0x40BF)",
-      address: 0x40BF,
-      powerCmd: 0x12,
-      volUpCmd: 0x1A,
-      volDownCmd: 0x1E,
-      chUpCmd: 0x1B,
-      chDownCmd: 0x1F,
-      muteCmd: 0x10,
-      menuCmd: 0x14,
-      sourceCmd: 0x18,
-      okCmd: 0x0D,
-      upCmd: 0x0B,
-      downCmd: 0x0E,
-      leftCmd: 0x0A,
-      rightCmd: 0x0C,
-      exitCmd: 0x1C,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 8. لوحات Konka / StarLED (0x0202)
-    ChassisProfile(
-      name: "P8: Konka/Star (0x0202)",
-      address: 0x0202,
-      powerCmd: 0x0B,
-      volUpCmd: 0x13,
-      volDownCmd: 0x12,
-      chUpCmd: 0x11,
-      chDownCmd: 0x10,
-      muteCmd: 0x14,
-      menuCmd: 0x15,
-      sourceCmd: 0x1C,
-      okCmd: 0x2F,
-      upCmd: 0x2B,
-      downCmd: 0x2C,
-      leftCmd: 0x2D,
-      rightCmd: 0x2E,
-      exitCmd: 0x30,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 9. لوحات Haier / StarLED (0x1818)
-    ChassisProfile(
-      name: "P9: Haier/Star (0x1818)",
-      address: 0x1818,
-      powerCmd: 0x0C,
-      volUpCmd: 0x10,
-      volDownCmd: 0x11,
-      chUpCmd: 0x20,
-      chDownCmd: 0x21,
-      muteCmd: 0x0D,
-      menuCmd: 0x30,
-      sourceCmd: 0x38,
-      okCmd: 0x35,
-      upCmd: 0x31,
-      downCmd: 0x32,
-      leftCmd: 0x33,
-      rightCmd: 0x34,
-      exitCmd: 0x36,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 10. لوحات TCL / Thomson (0xF00F)
-    ChassisProfile(
-      name: "P10: TCL/Star (0xF00F)",
+      name: "P12: TCL/Star (0xF00F)",
+      protocol: IrProtocol.nec,
       address: 0xF00F,
       powerCmd: 0x0D,
       volUpCmd: 0x10,
@@ -276,86 +337,6 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
       leftCmd: 0x5A,
       rightCmd: 0x5B,
       exitCmd: 0x0A,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 11. لوحات Universal China 1 (0x01FE)
-    ChassisProfile(
-      name: "P11: China-TV1 (0x01FE)",
-      address: 0x01FE,
-      powerCmd: 0x48,
-      volUpCmd: 0x1A,
-      volDownCmd: 0x1E,
-      chUpCmd: 0x1B,
-      chDownCmd: 0x1F,
-      muteCmd: 0x10,
-      menuCmd: 0x14,
-      sourceCmd: 0x18,
-      okCmd: 0x0D,
-      upCmd: 0x0B,
-      downCmd: 0x0E,
-      leftCmd: 0x0A,
-      rightCmd: 0x0C,
-      exitCmd: 0x1C,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 12. لوحات Universal China 2 (0x807F مع أوامر CVTE)
-    ChassisProfile(
-      name: "P12: StarLED-Alt (0x807F)",
-      address: 0x807F,
-      powerCmd: 0x0D,
-      volUpCmd: 0x15,
-      volDownCmd: 0x16,
-      chUpCmd: 0x13,
-      chDownCmd: 0x14,
-      muteCmd: 0x0E,
-      menuCmd: 0x1A,
-      sourceCmd: 0x0C,
-      okCmd: 0x1F,
-      upCmd: 0x1B,
-      downCmd: 0x1C,
-      leftCmd: 0x1D,
-      rightCmd: 0x1E,
-      exitCmd: 0x19,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 13. لوحات Universal China 3 (0xFE01 مع أوامر CVTE)
-    ChassisProfile(
-      name: "P13: StarLED-Inv (0xFE01)",
-      address: 0xFE01,
-      powerCmd: 0x0D,
-      volUpCmd: 0x15,
-      volDownCmd: 0x16,
-      chUpCmd: 0x13,
-      chDownCmd: 0x14,
-      muteCmd: 0x0E,
-      menuCmd: 0x1A,
-      sourceCmd: 0x0C,
-      okCmd: 0x1F,
-      upCmd: 0x1B,
-      downCmd: 0x1C,
-      leftCmd: 0x1D,
-      rightCmd: 0x1E,
-      exitCmd: 0x19,
-      digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-    ),
-    // 14. لوحات Vestel / Finlux (0x0000)
-    ChassisProfile(
-      name: "P14: Vestel/Star (0x0000)",
-      address: 0x0000,
-      powerCmd: 0x0C,
-      volUpCmd: 0x10,
-      volDownCmd: 0x11,
-      chUpCmd: 0x20,
-      chDownCmd: 0x21,
-      muteCmd: 0x0D,
-      menuCmd: 0x30,
-      sourceCmd: 0x38,
-      okCmd: 0x35,
-      upCmd: 0x14,
-      downCmd: 0x13,
-      leftCmd: 0x15,
-      rightCmd: 0x16,
-      exitCmd: 0x37,
       digits: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
     ),
   ];
@@ -384,22 +365,114 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
     }
   }
 
-  List<int> _buildNecPattern(int address, int command) {
-    List<int> pattern = [9000, 4500];
+  /// توليد إطار NEC / Toshiba القياسي (9000us Mark + 4500us Space)
+  List<int> _buildNecOrToshibaFrame(int address, int command) {
+    List<int> frame = [9000, 4500];
     for (int i = 0; i < 16; i++) {
-      pattern.add(560);
+      frame.add(560);
       bool bit = ((address >> i) & 1) == 1;
-      pattern.add(bit ? 1690 : 560);
+      frame.add(bit ? 1690 : 560);
     }
     int invertedCommand = (~command) & 0xFF;
     int fullCommand = (invertedCommand << 8) | (command & 0xFF);
     for (int i = 0; i < 16; i++) {
-      pattern.add(560);
+      frame.add(560);
       bool bit = ((fullCommand >> i) & 1) == 1;
-      pattern.add(bit ? 1690 : 560);
+      frame.add(bit ? 1690 : 560);
     }
-    pattern.add(560);
+    frame.add(560);
+    return frame;
+  }
+
+  /// توليد إطار Samsung / Toshiba-B (4500us Mark + 4500us Space)
+  List<int> _buildSamsungFrame(int address, int command) {
+    List<int> frame = [4500, 4500];
+    for (int i = 0; i < 16; i++) {
+      frame.add(560);
+      bool bit = ((address >> i) & 1) == 1;
+      frame.add(bit ? 1690 : 560);
+    }
+    int invertedCommand = (~command) & 0xFF;
+    int fullCommand = (invertedCommand << 8) | (command & 0xFF);
+    for (int i = 0; i < 16; i++) {
+      frame.add(560);
+      bool bit = ((fullCommand >> i) & 1) == 1;
+      frame.add(bit ? 1690 : 560);
+    }
+    frame.add(560);
+    return frame;
+  }
+
+  /// توليد إطار Philips RC5 (ترميز مانشستر 889us لكل نصف بت)
+  List<int> _buildRc5Frame(int systemAddr, int command) {
+    List<int> bits = [
+      1, // Start bit 1
+      (command < 64) ? 1 : 0, // Start bit 2 (Field bit)
+      _rc5ToggleBit ? 1 : 0, // Toggle bit
+    ];
+    for (int i = 4; i >= 0; i--) {
+      bits.add((systemAddr >> i) & 1);
+    }
+    for (int i = 5; i >= 0; i--) {
+      bits.add((command >> i) & 1);
+    }
+
+    // تحويل البتات إلى نبضات (Mark, Space, Mark, Space...)
+    // بت 1 = Space(889) ثم Mark(889) | بت 0 = Mark(889) ثم Space(889)
+    List<int> raw = [];
+    for (int b in bits) {
+      if (b == 1) {
+        raw.add(-889); // Space
+        raw.add(889);  // Mark
+      } else {
+        raw.add(889);  // Mark
+        raw.add(-889); // Space
+      }
+    }
+
+    // تجاهل الفراغ الأولي ودمج النبضات المتتالية من نفس النوع
+    List<int> pattern = [];
+    for (int val in raw) {
+      if (pattern.isEmpty) {
+        if (val > 0) pattern.add(val);
+        continue;
+      }
+      bool lastIsMark = pattern.length % 2 == 1;
+      bool currIsMark = val > 0;
+      if (lastIsMark == currIsMark) {
+        pattern[pattern.length - 1] += val.abs();
+      } else {
+        pattern.add(val.abs());
+      }
+    }
+    if (pattern.length % 2 == 0) {
+      pattern.removeLast();
+    }
     return pattern;
+  }
+
+  /// بناء الإشارة النهائية مع تكرار النبضة مرتين (Double Repeat) لضمان الاستجابة
+  List<int> _buildFullSignalWithRepeat(ChassisProfile p, int cmd) {
+    List<int> singleFrame;
+    int gapMicros = 40000; // فاصل 40 مللي ثانية بين الإطارين
+
+    switch (p.protocol) {
+      case IrProtocol.toshiba:
+      case IrProtocol.nec:
+        singleFrame = _buildNecOrToshibaFrame(p.address, cmd);
+        break;
+      case IrProtocol.samsung:
+        singleFrame = _buildSamsungFrame(p.address, cmd);
+        gapMicros = 45000;
+        break;
+      case IrProtocol.rc5:
+        singleFrame = _buildRc5Frame(p.address, cmd);
+        gapMicros = 88000;
+        break;
+    }
+
+    // دمج الإطار مرتين مع الفاصل الزمني بينهما
+    return [...singleFrame, gapMicros, ...singleFrame];
   }
 
   int _getCommandForKey(ChassisProfile p, String key) {
@@ -428,12 +501,21 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
   Future<void> _sendKey(String keyName) async {
     HapticFeedback.mediumImpact();
     if (!_hasIrEmitter) return;
+
     final p = _profiles[_profileIndex];
     final int cmd = _getCommandForKey(p, keyName);
-    final List<int> pattern = _buildNecPattern(p.address, cmd);
+    final List<int> pattern = _buildFullSignalWithRepeat(p, cmd);
+
+    if (p.protocol == IrProtocol.rc5) {
+      _rc5ToggleBit = !_rc5ToggleBit;
+    }
+
     try {
-      await _irChannel.invokeMethod('transmit', {'pattern': pattern});
-      setState(() => _status = "${p.name} -> $keyName");
+      await _irChannel.invokeMethod('transmit', {
+        'pattern': pattern,
+        'frequency': p.frequency,
+      });
+      setState(() => _status = "${p.name} (2x) -> $keyName");
     } catch (e) {
       setState(() => _status = "فشل الإرسال: $e");
     }
@@ -449,7 +531,7 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
     } else {
       setState(() => _isScanning = true);
       _sendKey('VOL_UP');
-      _scanTimer = Timer.periodic(const Duration(milliseconds: 1400), (timer) {
+      _scanTimer = Timer.periodic(const Duration(milliseconds: 1600), (timer) {
         setState(() {
           _profileIndex = (_profileIndex + 1) % _profiles.length;
         });
@@ -480,7 +562,7 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("StarLED HK320DF", style: TextStyle(fontSize: 17)),
+        title: const Text("StarLED Multi-Protocol", style: TextStyle(fontSize: 16)),
         backgroundColor: const Color(0xFF1E293B),
         actions: [
           Padding(
@@ -502,7 +584,6 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
           padding: const EdgeInsets.all(12.0),
           child: Column(
             children: [
-              // قائمة اختيار البروفايل يدوياً
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
@@ -518,7 +599,10 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
                     items: List.generate(_profiles.length, (index) {
                       return DropdownMenuItem(
                         value: index,
-                        child: Text(_profiles[index].name, style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                        child: Text(
+                          _profiles[index].name,
+                          style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                        ),
                       );
                     }),
                     onChanged: (val) {
@@ -533,7 +617,6 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
               const SizedBox(height: 8),
               Text(_status, style: const TextStyle(fontSize: 13, color: Colors.tealAccent)),
               const SizedBox(height: 12),
-
               Row(
                 children: [
                   Expanded(child: _btn("POWER", "POWER", color: Colors.red.shade700, icon: Icons.power_settings_new)),
@@ -544,7 +627,6 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -558,7 +640,6 @@ class _StarLedRemoteScreenState extends State<StarLedRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-
               Row(
                 children: [
                   Expanded(

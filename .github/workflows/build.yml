@@ -20,16 +20,50 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Create & Configure Flutter Project
+      - name: Create & Configure Native IR Flutter Project
         run: |
-          flutter create --org com.starled.remote starled_app
+          flutter create --org com.starled.remote --platforms android starled_app
           cp main.dart starled_app/lib/main.dart
           cd starled_app
-          flutter pub add ir_sensor_plugin
           sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
-          # ضبط SDK وإصلاح توافق الحزم القديمة مع Gradle الحديث
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/' android/app/build.gradle* || true
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/' android/app/build.gradle* || true
+          
+          # كتابة كود Kotlin للتحكم المباشر في مستشعر IR بدون مكتبات خارجية
+          MAIN_KT=$(find android/app/src/main/kotlin -name "MainActivity.kt")
+          cat << 'EOF' > "$MAIN_KT"
+          package com.starled.remote.starled_app
+
+          import android.content.Context
+          import android.hardware.ConsumerIrManager
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+
+          class MainActivity: FlutterActivity() {
+              private val CHANNEL = "starled_ir_channel"
+
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+                      val irManager = getSystemService(Context.CONSUMER_IR_SERVICE) as? ConsumerIrManager
+                      when (call.method) {
+                          "hasIrEmitter" -> {
+                              result.success(irManager?.hasIrEmitter() ?: false)
+                          }
+                          "transmit" -> {
+                              val patternList = call.argument<List<Int>>("pattern")
+                              if (irManager != null && irManager.hasIrEmitter() && patternList != null) {
+                                  irManager.transmit(38000, patternList.toIntArray())
+                                  result.success(true)
+                              } else {
+                                  result.error("IR_UNAVAILABLE", "IR Blaster not available", null)
+                              }
+                          }
+                          else -> result.notImplemented()
+                      }
+                  }
+              }
+          }
+          EOF
 
       - name: Build APK
         run: |

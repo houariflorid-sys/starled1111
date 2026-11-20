@@ -1,4 +1,4 @@
-name: Build StarLED Remote APK
+name: Build AMW Remote APK
 
 on:
   workflow_dispatch:
@@ -20,17 +20,35 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Create & Configure Native IR Flutter Project
+      - name: Create & Configure AMW Remote Project
         run: |
-          flutter create --org com.starled.remote --platforms android starled_app
-          cp main.dart starled_app/lib/main.dart
-          cd starled_app
-          sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          flutter create --org com.amw.remote --platforms android amw_app
+          cp main.dart amw_app/lib/main.dart
+          mkdir -p amw_app/assets
+          cp icon.* amw_app/assets/icon.jpg || true
           
-          # كتابة كود Kotlin للتحكم المباشر في مستشعر IR بدون مكتبات خارجية
+          cd amw_app
+          sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="amw_app"/android:label="AMW Remote"/' android/app/src/main/AndroidManifest.xml
+          
+          # توليد أيقونة التطبيق من صورتك
+          if [ -f "assets/icon.jpg" ]; then
+            flutter pub add dev:flutter_launcher_icons
+            cat << 'EOF' > flutter_launcher_icons.yaml
+          flutter_launcher_icons:
+            android: true
+            ios: false
+            image_path: "assets/icon.jpg"
+            adaptive_icon_background: "#0B1120"
+            adaptive_icon_foreground: "assets/icon.jpg"
+          EOF
+            dart run flutter_launcher_icons
+          fi
+          
+          # كود Kotlin للتحكم المباشر في IR ودعم تردد 36kHz و 38kHz
           MAIN_KT=$(find android/app/src/main/kotlin -name "MainActivity.kt")
           cat << 'EOF' > "$MAIN_KT"
-          package com.starled.remote.starled_app
+          package com.amw.remote.amw_app
 
           import android.content.Context
           import android.hardware.ConsumerIrManager
@@ -51,8 +69,9 @@ jobs:
                           }
                           "transmit" -> {
                               val patternList = call.argument<List<Int>>("pattern")
+                              val freq = call.argument<Int>("frequency") ?: 38000
                               if (irManager != null && irManager.hasIrEmitter() && patternList != null) {
-                                  irManager.transmit(38000, patternList.toIntArray())
+                                  irManager.transmit(freq, patternList.toIntArray())
                                   result.success(true)
                               } else {
                                   result.error("IR_UNAVAILABLE", "IR Blaster not available", null)
@@ -67,11 +86,11 @@ jobs:
 
       - name: Build APK
         run: |
-          cd starled_app
+          cd amw_app
           flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: StarLED-Remote-APK
-          path: starled_app/build/app/outputs/flutter-apk/app-release.apk
+          name: AMW-Remote-APK
+          path: amw_app/build/app/outputs/flutter-apk/app-release.apk

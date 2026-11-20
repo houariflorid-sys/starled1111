@@ -29,16 +29,17 @@ jobs:
           sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="amw_app"/android:label="AMW Remote"/' android/app/src/main/AndroidManifest.xml
           
-          # وضع صورتك كأيقونة للتطبيق مباشرة بدون مكتبات خارجية تسبب أخطاء Gradle
+          # حذف الأيقونة التكيفية الافتراضية لكي تظهر صورتك مباشرة على شاشة الهاتف
+          rm -rf android/app/src/main/res/mipmap-anydpi*
+          
           if [ -f "../icon.jpg" ] || [ -f "../icon.png" ]; then
             SRC_IMG=$(ls ../icon.* | head -n 1)
             for dir in android/app/src/main/res/mipmap-*; do
               rm -f "$dir"/ic_launcher.*
-              cp "$SRC_IMG" "$dir/ic_launcher.png"
+              convert "$SRC_IMG" -resize 192x192 "$dir/ic_launcher.png" 2>/dev/null || cp "$SRC_IMG" "$dir/ic_launcher.png"
             done
           fi
           
-          # كود Kotlin للتحكم المباشر في IR ودعم جميع الترددات
           MAIN_KT=$(find android/app/src/main/kotlin -name "MainActivity.kt")
           cat << 'EOF' > "$MAIN_KT"
           package com.amw.remote.amw_app

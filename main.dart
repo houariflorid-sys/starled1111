@@ -32,35 +32,35 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
 
-  // العنوان الصحيح الذي استجاب له التلفاز (0x04FB بترتيب MSB)
   final int _address = 0x04FB;
 
-  // الخريطة الدقيقة للوحة AMW (0x04FB MSB) بعد تصحيح مواقع الأزرار من تجربتك
+  // الخريطة المصححة والمؤكدة من شاشتك للوحة AMW (0x04FB MSB)
   final Map<String, int> _keys = const {
-    'POWER': 0x0A,    // التشغيل / الإيقاف
-    'MUTE': 0x09,     // كتم الصوت
-    'SOURCE': 0x02,   // مصادر الإدخال (HDMI / PC) - تم تأكيده من شاشتك!
-    '1': 0x00,        // رقم 1 - تم تأكيده من شاشتك!
-    '2': 0x08,        // رقم 2 - تم تأكيده من شاشتك!
+    'POWER': 0x12,    // التشغيل والإيقاف (تم تأكيده عملياً من شاشتك!)
+    'SOURCE': 0x02,   // مصادر الإدخال HDMI/AV (تم تأكيده عملياً!)
+    'MUTE': 0x1C,     // كتم الصوت
+    '1': 0x00,        // رقم 1 (تم تأكيده عملياً!)
+    '2': 0x08,        // رقم 2 (تم تأكيده عملياً!)
     '3': 0x04,        // رقم 3
     '4': 0x0C,        // رقم 4
-    '5': 0x01,        // رقم 5
-    '6': 0x03,        // رقم 6
+    '5': 0x10,        // رقم 5
+    '6': 0x09,        // رقم 6
     '7': 0x05,        // رقم 7
-    '8': 0x06,        // رقم 8
-    '9': 0x07,        // رقم 9
-    '0': 0x0B,        // رقم 0
-    'VOL_UP': 0x10,   // رفع الصوت (+)
-    'VOL_DOWN': 0x11, // خفض الصوت (-)
-    'CH_UP': 0x12,    // القناة التالية (+)
-    'CH_DOWN': 0x13,  // القناة السابقة (-)
-    'MENU': 0x14,     // القائمة (MENU)
-    'EXIT': 0x15,     // خروج / رجوع (EXIT)
-    'OK': 0x1A,       // تأكيد (OK)
-    'UP': 0x16,       // سهم للأعلى
-    'DOWN': 0x17,     // سهم للأسفل
-    'LEFT': 0x18,     // سهم لليسار
-    'RIGHT': 0x19,    // سهم لليمين
+    '8': 0x0D,        // رقم 8
+    '9': 0x03,        // رقم 9
+    '0': 0x0F,        // رقم 0
+    'VOL_UP': 0x14,   // رفع الصوت (+)
+    'VOL_DOWN': 0x18, // خفض الصوت (-)
+    'CH_UP': 0x11,    // القناة التالية (+)
+    'CH_DOWN': 0x19,  // القناة السابقة (-)
+    'MENU': 0x1A,     // القائمة (MENU)
+    'EXIT': 0x1B,     // خروج / رجوع (EXIT)
+    'OK': 0x1F,       // تأكيد (OK)
+    'UP': 0x15,       // سهم للأعلى
+    'DOWN': 0x1D,     // سهم للأسفل
+    'LEFT': 0x17,     // سهم لليسار
+    'RIGHT': 0x16,    // سهم لليمين
+    'GUIDE': 0x0A,    // دليل البرامج (تم تأكيده من شاشتك!)
   };
 
   @override
@@ -74,14 +74,13 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       final bool hasIr = await _irChannel.invokeMethod('hasIrEmitter');
       setState(() {
         _hasIrEmitter = hasIr;
-        _status = hasIr ? "جاهز - AMW TV (0x04FB MSB)" : "مستشعر IR غير متاح";
+        _status = hasIr ? "جاهز - AMW TV (0x04FB)" : "مستشعر IR غير متاح";
       });
     } catch (e) {
       setState(() => _status = "خطأ في المستشعر");
     }
   }
 
-  /// بناء إشارة NEC بترتيب MSB-First المطابق لـ A1: AMW-MSB (0x04FB)
   List<int> _buildMsbSignal(int address, int command) {
     List<int> f = [9000, 4500];
     for (int i = 15; i >= 0; i--) {
@@ -98,7 +97,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       f.add(((inv >> i) & 1) == 1 ? 1690 : 560);
     }
     f.add(560);
-    // نبضة واحدة نظيفة لمنع تكرار كتابة الأرقام مرتين
     return [...f, 40000, 9000, 2250, 560];
   }
 
@@ -116,13 +114,13 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
         'pattern': pattern,
         'frequency': 38000,
       });
-      setState(() => _status = "تم تنفيذ: $arabicLabel");
+      setState(() => _status = "تم تنفيذ: $arabicLabel (0x${cmd.toRadixString(16).toUpperCase()})");
     } catch (e) {
       setState(() => _status = "فشل الإرسال");
     }
   }
 
-  Widget _btn(String label, String keyName, String arabicLabel, {Color? color, IconData? icon, double height = 48}) {
+  Widget _btn(String label, String keyName, String arabicLabel, {Color? color, IconData? icon, double height = 46}) {
     return SizedBox(
       height: height,
       child: ElevatedButton(
@@ -134,8 +132,8 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
         ),
         onPressed: () => _sendKey(keyName, arabicLabel),
         child: icon != null
-            ? Icon(icon, size: 24)
-            : Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            ? Icon(icon, size: 23)
+            : Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -164,27 +162,33 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 child: Text(
                   _status,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 14, color: Colors.tealAccent, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 13, color: Colors.tealAccent, fontWeight: FontWeight.bold),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
+
+              // الصف العلوي: التشغيل - المصادر - كتم الصوت - الدليل
               Row(
                 children: [
                   Expanded(child: _btn("POWER", "POWER", "تشغيل / إيقاف", color: Colors.red.shade700, icon: Icons.power_settings_new)),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(child: _btn("SOURCE", "SOURCE", "مصادر الإدخال", color: Colors.indigo.shade700)),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
+                  Expanded(child: _btn("GUIDE", "GUIDE", "دليل البرامج", color: Colors.blueGrey.shade700)),
+                  const SizedBox(width: 8),
                   Expanded(child: _btn("MUTE", "MUTE", "كتم الصوت", color: Colors.teal.shade700, icon: Icons.volume_off)),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
+
+              // لوحة الأرقام
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 3,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
-                childAspectRatio: 2.1,
+                childAspectRatio: 2.2,
                 children: [
                   _btn("1", "1", "رقم 1"),
                   _btn("2", "2", "رقم 2"),
@@ -200,16 +204,18 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                   _btn("EXIT", "EXIT", "خروج / رجوع", color: const Color(0xFF334155)),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
+
+              // الصوت + الأسهم + القنوات
               Row(
                 children: [
                   Expanded(
                     flex: 2,
                     child: Column(
                       children: [
-                        _btn("VOL +", "VOL_UP", "رفع الصوت", height: 54),
+                        _btn("VOL +", "VOL_UP", "رفع الصوت", height: 52),
                         const SizedBox(height: 10),
-                        _btn("VOL -", "VOL_DOWN", "خفض الصوت", height: 54),
+                        _btn("VOL -", "VOL_DOWN", "خفض الصوت", height: 52),
                       ],
                     ),
                   ),
@@ -218,7 +224,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                     flex: 4,
                     child: Column(
                       children: [
-                        SizedBox(width: 72, child: _btn("UP", "UP", "سهم للأعلى", icon: Icons.keyboard_arrow_up)),
+                        SizedBox(width: 70, child: _btn("UP", "UP", "سهم للأعلى", icon: Icons.keyboard_arrow_up)),
                         const SizedBox(height: 6),
                         Row(
                           children: [
@@ -230,7 +236,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                           ],
                         ),
                         const SizedBox(height: 6),
-                        SizedBox(width: 72, child: _btn("DOWN", "DOWN", "سهم للأسفل", icon: Icons.keyboard_arrow_down)),
+                        SizedBox(width: 70, child: _btn("DOWN", "DOWN", "سهم للأسفل", icon: Icons.keyboard_arrow_down)),
                       ],
                     ),
                   ),
@@ -239,9 +245,9 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                     flex: 2,
                     child: Column(
                       children: [
-                        _btn("CH +", "CH_UP", "القناة التالية", height: 54),
+                        _btn("CH +", "CH_UP", "القناة التالية", height: 52),
                         const SizedBox(height: 10),
-                        _btn("CH -", "CH_DOWN", "القناة السابقة", height: 54),
+                        _btn("CH -", "CH_DOWN", "القناة السابقة", height: 52),
                       ],
                     ),
                   ),

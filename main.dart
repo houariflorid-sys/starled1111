@@ -21,13 +21,19 @@ class AmwRemoteApp extends StatelessWidget {
   }
 }
 
-class AmwKeyMap {
-  final String label;
+enum SignalType { necLsb, necMsb, sony12, jvc, panasonic }
+
+class AmwProfile {
+  final String name;
+  final SignalType type;
+  final int frequency;
   final int address;
   final Map<String, int> keys;
 
-  const AmwKeyMap({
-    required this.label,
+  const AmwProfile({
+    required this.name,
+    required this.type,
+    this.frequency = 38000,
     required this.address,
     required this.keys,
   });
@@ -44,196 +50,96 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   static const MethodChannel _irChannel = MethodChannel('starled_ir_channel');
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
-  int _selectedMap = 0;
+  int _selected = 0;
   bool _isScanning = false;
-  Timer? _scanTimer;
+  Timer? _timer;
 
-  // أكواد AMW TV (RID: 5904) مع ترتيب الأزرار الدقيق لكل لوحة
-  final List<AmwKeyMap> _amwMaps = const [
-    // 1. لوحة AMW / Ali / Sunplus (0x866B) - الأكثر تطابقاً مع RID 5904
-    AmwKeyMap(
-      label: "M1: AMW-Ali (0x866B)",
-      address: 0x866B,
+  // خرائط AMW TV (RID: 5904) بجميع احتمالات التشفير (MSB / LSB / Sony / JVC / Panasonic)
+  final List<AmwProfile> _profiles = const [
+    // 1. NEC MSB-First (الترتيب المعكوس - شائع جداً في قواعد بيانات RID)
+    AmwProfile(
+      name: "A1: AMW-MSB (0x04FB)",
+      type: SignalType.necMsb,
+      address: 0x04FB,
       keys: {
-        'POWER': 0x00,
-        'MUTE': 0x01,
-        'SOURCE': 0x03,
-        'VOL_UP': 0x0C,
-        'VOL_DOWN': 0x0D,
-        'CH_UP': 0x0E,
-        'CH_DOWN': 0x0F,
-        'MENU': 0x10,
-        'EXIT': 0x11,
-        'OK': 0x16,
-        'UP': 0x12,
-        'DOWN': 0x13,
-        'LEFT': 0x14,
-        'RIGHT': 0x15,
-        '0': 0x02,
-        '1': 0x04,
-        '2': 0x05,
-        '3': 0x06,
-        '4': 0x07,
-        '5': 0x08,
-        '6': 0x09,
-        '7': 0x0A,
-        '8': 0x0B,
-        '9': 0x17,
+        'POWER': 0x08, 'MUTE': 0x09, 'SOURCE': 0x0B,
+        'VOL_UP': 0x02, 'VOL_DOWN': 0x03, 'CH_UP': 0x00, 'CH_DOWN': 0x01,
+        'MENU': 0x43, 'EXIT': 0x5B, 'OK': 0x44,
+        'UP': 0x40, 'DOWN': 0x41, 'LEFT': 0x07, 'RIGHT': 0x06,
+        '0': 0x10, '1': 0x11, '2': 0x12, '3': 0x13, '4': 0x14,
+        '5': 0x15, '6': 0x16, '7': 0x17, '8': 0x18, '9': 0x19,
       },
     ),
-    // 2. لوحة AMW / MStar Extended (0x02FD)
-    AmwKeyMap(
-      label: "M2: AMW-MStar (0x02FD)",
-      address: 0x02FD,
+    // 2. NEC MSB-First (0x00FF)
+    AmwProfile(
+      name: "A2: AMW-MSB (0x00FF)",
+      type: SignalType.necMsb,
+      address: 0x00FF,
       keys: {
-        'POWER': 0x01,
-        'MUTE': 0x00,
-        'SOURCE': 0x03,
-        'VOL_UP': 0x0F,
-        'VOL_DOWN': 0x13,
-        'CH_UP': 0x0E,
-        'CH_DOWN': 0x12,
-        'MENU': 0x0D,
-        'EXIT': 0x18,
-        'OK': 0x15,
-        'UP': 0x11,
-        'DOWN': 0x19,
-        'LEFT': 0x14,
-        'RIGHT': 0x16,
-        '0': 0x10,
-        '1': 0x04,
-        '2': 0x05,
-        '3': 0x06,
-        '4': 0x07,
-        '5': 0x08,
-        '6': 0x09,
-        '7': 0x0A,
-        '8': 0x0B,
-        '9': 0x0C,
+        'POWER': 0x0D, 'MUTE': 0x0E, 'SOURCE': 0x0C,
+        'VOL_UP': 0x15, 'VOL_DOWN': 0x16, 'CH_UP': 0x13, 'CH_DOWN': 0x14,
+        'MENU': 0x1A, 'EXIT': 0x19, 'OK': 0x1F,
+        'UP': 0x1B, 'DOWN': 0x1C, 'LEFT': 0x1D, 'RIGHT': 0x1E,
+        '0': 0x00, '1': 0x01, '2': 0x02, '3': 0x03, '4': 0x04,
+        '5': 0x05, '6': 0x06, '7': 0x07, '8': 0x08, '9': 0x09,
       },
     ),
-    // 3. لوحة AMW / OEM-4040 (Extended NEC)
-    AmwKeyMap(
-      label: "M3: AMW-OEM (0x4040)",
-      address: 0x4040,
+    // 3. Sony SIRC 12-bit (تردد 40kHz - تستخدمه بعض شاشات AMW)
+    AmwProfile(
+      name: "A3: AMW-Sony (40kHz)",
+      type: SignalType.sony12,
+      frequency: 40000,
+      address: 0x01,
       keys: {
-        'POWER': 0x0A,
-        'MUTE': 0x0C,
-        'SOURCE': 0x0B,
-        'VOL_UP': 0x1A,
-        'VOL_DOWN': 0x1E,
-        'CH_UP': 0x1B,
-        'CH_DOWN': 0x1F,
-        'MENU': 0x14,
-        'EXIT': 0x1C,
-        'OK': 0x0D,
-        'UP': 0x0B,
-        'DOWN': 0x0E,
-        'LEFT': 0x0A,
-        'RIGHT': 0x0C,
-        '0': 0x00,
-        '1': 0x01,
-        '2': 0x02,
-        '3': 0x03,
-        '4': 0x04,
-        '5': 0x05,
-        '6': 0x06,
-        '7': 0x07,
-        '8': 0x08,
-        '9': 0x09,
+        'POWER': 0x15, 'MUTE': 0x14, 'SOURCE': 0x25,
+        'VOL_UP': 0x12, 'VOL_DOWN': 0x13, 'CH_UP': 0x10, 'CH_DOWN': 0x11,
+        'MENU': 0x60, 'EXIT': 0x63, 'OK': 0x65,
+        'UP': 0x74, 'DOWN': 0x75, 'LEFT': 0x34, 'RIGHT': 0x33,
+        '0': 0x09, '1': 0x00, '2': 0x01, '3': 0x02, '4': 0x03,
+        '5': 0x04, '6': 0x05, '7': 0x06, '8': 0x07, '9': 0x08,
       },
     ),
-    // 4. لوحة AMW / China-01FE
-    AmwKeyMap(
-      label: "M4: AMW-China (0x01FE)",
-      address: 0x01FE,
+    // 4. JVC Protocol (0xC0)
+    AmwProfile(
+      name: "A4: AMW-JVC (0xC0)",
+      type: SignalType.jvc,
+      address: 0xC0,
       keys: {
-        'POWER': 0x48,
-        'MUTE': 0x10,
-        'SOURCE': 0x18,
-        'VOL_UP': 0x1A,
-        'VOL_DOWN': 0x1E,
-        'CH_UP': 0x1B,
-        'CH_DOWN': 0x1F,
-        'MENU': 0x14,
-        'EXIT': 0x1C,
-        'OK': 0x0D,
-        'UP': 0x0B,
-        'DOWN': 0x0E,
-        'LEFT': 0x0A,
-        'RIGHT': 0x0C,
-        '0': 0x00,
-        '1': 0x01,
-        '2': 0x02,
-        '3': 0x03,
-        '4': 0x04,
-        '5': 0x05,
-        '6': 0x06,
-        '7': 0x07,
-        '8': 0x08,
-        '9': 0x09,
+        'POWER': 0x17, 'MUTE': 0x1C, 'SOURCE': 0x13,
+        'VOL_UP': 0x1E, 'VOL_DOWN': 0x1F, 'CH_UP': 0x19, 'CH_DOWN': 0x18,
+        'MENU': 0x2E, 'EXIT': 0x2D, 'OK': 0x2F,
+        'UP': 0x2A, 'DOWN': 0x2B, 'LEFT': 0x2C, 'RIGHT': 0x29,
+        '0': 0x20, '1': 0x21, '2': 0x22, '3': 0x23, '4': 0x24,
+        '5': 0x25, '6': 0x26, '7': 0x27, '8': 0x28, '9': 0x29,
       },
     ),
-    // 5. لوحة AMW / 55AA (Extended NEC)
-    AmwKeyMap(
-      label: "M5: AMW-55AA (0x55AA)",
-      address: 0x55AA,
+    // 5. Panasonic / Matsushita (48-bit Kaseikyo)
+    AmwProfile(
+      name: "A5: AMW-Panasonic",
+      type: SignalType.panasonic,
+      frequency: 37000,
+      address: 0x0080,
       keys: {
-        'POWER': 0x01,
-        'MUTE': 0x02,
-        'SOURCE': 0x03,
-        'VOL_UP': 0x12,
-        'VOL_DOWN': 0x13,
-        'CH_UP': 0x10,
-        'CH_DOWN': 0x11,
-        'MENU': 0x14,
-        'EXIT': 0x15,
-        'OK': 0x1A,
-        'UP': 0x16,
-        'DOWN': 0x17,
-        'LEFT': 0x18,
-        'RIGHT': 0x19,
-        '0': 0x00,
-        '1': 0x04,
-        '2': 0x05,
-        '3': 0x06,
-        '4': 0x07,
-        '5': 0x08,
-        '6': 0x09,
-        '7': 0x0A,
-        '8': 0x0B,
-        '9': 0x0C,
+        'POWER': 0x3D, 'MUTE': 0x32, 'SOURCE': 0x05,
+        'VOL_UP': 0x20, 'VOL_DOWN': 0x21, 'CH_UP': 0x34, 'CH_DOWN': 0x35,
+        'MENU': 0x52, 'EXIT': 0xD3, 'OK': 0x49,
+        'UP': 0x4A, 'DOWN': 0x4B, 'LEFT': 0x4E, 'RIGHT': 0x4F,
+        '0': 0x19, '1': 0x10, '2': 0x11, '3': 0x12, '4': 0x13,
+        '5': 0x14, '6': 0x15, '7': 0x16, '8': 0x17, '9': 0x18,
       },
     ),
-    // 6. لوحة AMW / 807F مع أوامر CVTE
-    AmwKeyMap(
-      label: "M6: AMW-CVTE (0x807F)",
-      address: 0x807F,
+    // 6. NEC LSB القياسي مع عنوان 0x00FD (شائع في لوحات Vestel/AMW)
+    AmwProfile(
+      name: "A6: AMW-Vestel (0x00FD)",
+      type: SignalType.necLsb,
+      address: 0x00FD,
       keys: {
-        'POWER': 0x0D,
-        'MUTE': 0x0E,
-        'SOURCE': 0x0C,
-        'VOL_UP': 0x15,
-        'VOL_DOWN': 0x16,
-        'CH_UP': 0x13,
-        'CH_DOWN': 0x14,
-        'MENU': 0x1A,
-        'EXIT': 0x19,
-        'OK': 0x1F,
-        'UP': 0x1B,
-        'DOWN': 0x1C,
-        'LEFT': 0x1D,
-        'RIGHT': 0x1E,
-        '0': 0x00,
-        '1': 0x01,
-        '2': 0x02,
-        '3': 0x03,
-        '4': 0x04,
-        '5': 0x05,
-        '6': 0x06,
-        '7': 0x07,
-        '8': 0x08,
-        '9': 0x09,
+        'POWER': 0x0C, 'MUTE': 0x0D, 'SOURCE': 0x38,
+        'VOL_UP': 0x10, 'VOL_DOWN': 0x11, 'CH_UP': 0x20, 'CH_DOWN': 0x21,
+        'MENU': 0x30, 'EXIT': 0x37, 'OK': 0x35,
+        'UP': 0x14, 'DOWN': 0x13, 'LEFT': 0x15, 'RIGHT': 0x16,
+        '0': 0x00, '1': 0x01, '2': 0x02, '3': 0x03, '4': 0x04,
+        '5': 0x05, '6': 0x06, '7': 0x07, '8': 0x08, '9': 0x09,
       },
     ),
   ];
@@ -246,7 +152,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
 
   @override
   void dispose() {
-    _scanTimer?.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 
@@ -262,41 +168,96 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     }
   }
 
-  List<int> _buildNecFrame(int address, int command) {
-    List<int> frame = [9000, 4500];
-    for (int i = 0; i < 16; i++) {
-      frame.add(560);
-      bool bit = ((address >> i) & 1) == 1;
-      frame.add(bit ? 1690 : 560);
+  List<int> _buildSignal(AmwProfile p, int cmd) {
+    switch (p.type) {
+      case SignalType.necLsb:
+        List<int> f = [9000, 4500];
+        for (int i = 0; i < 16; i++) {
+          f.add(560);
+          f.add(((p.address >> i) & 1) == 1 ? 1690 : 560);
+        }
+        int full = (((~cmd) & 0xFF) << 8) | (cmd & 0xFF);
+        for (int i = 0; i < 16; i++) {
+          f.add(560);
+          f.add(((full >> i) & 1) == 1 ? 1690 : 560);
+        }
+        f.add(560);
+        return [...f, 40000, ...f];
+
+      case SignalType.necMsb:
+        List<int> f = [9000, 4500];
+        for (int i = 15; i >= 0; i--) {
+          f.add(560);
+          f.add(((p.address >> i) & 1) == 1 ? 1690 : 560);
+        }
+        int inv = (~cmd) & 0xFF;
+        for (int i = 7; i >= 0; i--) {
+          f.add(560);
+          f.add(((cmd >> i) & 1) == 1 ? 1690 : 560);
+        }
+        for (int i = 7; i >= 0; i--) {
+          f.add(560);
+          f.add(((inv >> i) & 1) == 1 ? 1690 : 560);
+        }
+        f.add(560);
+        return [...f, 40000, ...f];
+
+      case SignalType.sony12:
+        List<int> f = [2400, 600];
+        for (int i = 0; i < 7; i++) {
+          f.add(((cmd >> i) & 1) == 1 ? 1200 : 600);
+          f.add(600);
+        }
+        for (int i = 0; i < 5; i++) {
+          f.add(((p.address >> i) & 1) == 1 ? 1200 : 600);
+          f.add(600);
+        }
+        return [...f, 25000, ...f, 25000, ...f];
+
+      case SignalType.jvc:
+        List<int> header = [8400, 4200];
+        List<int> body = [];
+        for (int i = 0; i < 8; i++) {
+          body.add(526);
+          body.add(((p.address >> i) & 1) == 1 ? 1574 : 526);
+        }
+        for (int i = 0; i < 8; i++) {
+          body.add(526);
+          body.add(((cmd >> i) & 1) == 1 ? 1574 : 526);
+        }
+        body.add(526);
+        return [...header, ...body, 20000, ...body];
+
+      case SignalType.panasonic:
+        List<int> bytes = [0x02, 0x20, 0x80, 0x00, cmd, 0x80 ^ 0x00 ^ cmd];
+        List<int> f = [3456, 1728];
+        for (int b in bytes) {
+          for (int i = 0; i < 8; i++) {
+            f.add(432);
+            f.add(((b >> i) & 1) == 1 ? 1296 : 432);
+          }
+        }
+        f.add(432);
+        return [...f, 74000, ...f];
     }
-    int invertedCommand = (~command) & 0xFF;
-    int fullCommand = (invertedCommand << 8) | (command & 0xFF);
-    for (int i = 0; i < 16; i++) {
-      frame.add(560);
-      bool bit = ((fullCommand >> i) & 1) == 1;
-      frame.add(bit ? 1690 : 560);
-    }
-    frame.add(560);
-    // إرسال الإطار + نبضة التكرار القياسية لـ NEC (9000, 2250, 560)
-    return [...frame, 40000, 9000, 2250, 560];
   }
 
   Future<void> _sendKey(String keyName, String arabicName) async {
     HapticFeedback.mediumImpact();
     if (!_hasIrEmitter) return;
 
-    final map = _amwMaps[_selectedMap];
-    final int? cmd = map.keys[keyName];
+    final p = _profiles[_selected];
+    final int? cmd = p.keys[keyName];
     if (cmd == null) return;
 
-    final List<int> pattern = _buildNecFrame(map.address, cmd);
+    final List<int> pattern = _buildSignal(p, cmd);
 
     try {
       await _irChannel.invokeMethod('transmit', {
         'pattern': pattern,
-        'frequency': 38000,
+        'frequency': p.frequency,
       });
-      setState(() => _status = "${map.label} -> $arabicName");
+      setState(() => _status = "${p.name} -> $arabicName");
     } catch (e) {
       setState(() => _status = "فشل الإرسال");
     }
@@ -304,17 +265,17 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
 
   void _toggleScan() {
     if (_isScanning) {
-      _scanTimer?.cancel();
+      _timer?.cancel();
       setState(() {
         _isScanning = false;
-        _status = "مثبت على: ${_amwMaps[_selectedMap].label}";
+        _status = "مثبت على: ${_profiles[_selected].name}";
       });
     } else {
       setState(() => _isScanning = true);
       _sendKey('VOL_UP', 'رفع الصوت');
-      _scanTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+      _timer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
         setState(() {
-          _selectedMap = (_selectedMap + 1) % _amwMaps.length;
+          _selected = (_selected + 1) % _profiles.length;
         });
         _sendKey('VOL_UP', 'رفع الصوت');
       });
@@ -355,7 +316,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
               ),
               onPressed: _toggleScan,
               icon: Icon(_isScanning ? Icons.stop : Icons.radar, size: 18),
-              label: Text(_isScanning ? "إيقاف" : "فحص (M1-M6)"),
+              label: Text(_isScanning ? "إيقاف" : "فحص (A1-A6)"),
             ),
           )
         ],
@@ -374,20 +335,20 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
-                    value: _selectedMap,
+                    value: _selected,
                     isExpanded: true,
                     dropdownColor: const Color(0xFF1E293B),
-                    items: List.generate(_amwMaps.length, (i) {
+                    items: List.generate(_profiles.length, (i) {
                       return DropdownMenuItem(
                         value: i,
                         child: Text(
-                          _amwMaps[i].label,
+                          _profiles[i].name,
                           style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       );
                     }),
                     onChanged: (val) {
-                      if (val != null) setState(() => _selectedMap = val);
+                      if (val != null) setState(() => _selected = val);
                     },
                   ),
                 ),

@@ -22,6 +22,7 @@ jobs:
 
       - name: Create & Configure AMW Remote Project
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
           flutter create --org com.amw.remote --platforms android amw_app
           cp main.dart amw_app/lib/main.dart
           
@@ -29,17 +30,19 @@ jobs:
           sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="amw_app"/android:label="AMW Remote"/' android/app/src/main/AndroidManifest.xml
           
-          # حذف الأيقونة الافتراضية وتعيين صورتك كأيقونة رئيسية للتطبيق
+          # حذف الأيقونات التكيفية الافتراضية لكي تظهر صورتك مباشرة
           rm -rf android/app/src/main/res/mipmap-anydpi*
           
-          if ls ../icon.* 1> /dev/null 2>&1; then
-            SRC_IMG=$(ls ../icon.* | head -n 1)
+          # تحويل icon.jpg إلى PNG حقيقي بجميع مقاسات أندرويد
+          SRC_IMG=$(find .. -maxdepth 1 -iname "icon.*" | head -n 1)
+          if [ -n "$SRC_IMG" ]; then
             for dir in android/app/src/main/res/mipmap-*; do
               rm -f "$dir"/ic_launcher.*
-              cp "$SRC_IMG" "$dir/ic_launcher.png"
+              convert "$SRC_IMG" -resize 192x192 PNG32:"$dir/ic_launcher.png"
             done
           fi
           
+          # كود Kotlin للتحكم المباشر في مستشعر IR في هاتف Infinix
           MAIN_KT=$(find android/app/src/main/kotlin -name "MainActivity.kt")
           cat << 'EOF' > "$MAIN_KT"
           package com.amw.remote.amw_app

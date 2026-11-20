@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,15 +23,11 @@ class AmwRemoteApp extends StatelessWidget {
 
 class AmwKeyMap {
   final String label;
-  final int frequency;
-  final bool isRc5;
   final int address;
   final Map<String, int> keys;
 
   const AmwKeyMap({
     required this.label,
-    this.frequency = 38000,
-    this.isRc5 = false,
     required this.address,
     required this.keys,
   });
@@ -48,45 +45,170 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
   int _selectedMap = 0;
-  bool _rc5Toggle = false;
+  bool _isScanning = false;
+  Timer? _scanTimer;
 
-  // الخرائط الثلاث الدقيقة والمطابقة لوظائف أزرار AMW TV (RID: 5904)
+  // أكواد AMW TV (RID: 5904) مع ترتيب الأزرار الدقيق لكل لوحة
   final List<AmwKeyMap> _amwMaps = const [
-    // الخريطة 1: خريطة AMW / LG-OEM القياسية (0x04FB) - كل زر في وظيفته الدقيقة
+    // 1. لوحة AMW / Ali / Sunplus (0x866B) - الأكثر تطابقاً مع RID 5904
     AmwKeyMap(
-      label: "AMW 5904 - خريطة 1 (الأساسية)",
-      address: 0x04FB,
+      label: "M1: AMW-Ali (0x866B)",
+      address: 0x866B,
       keys: {
-        'POWER': 0x08,
-        'MUTE': 0x09,
-        'SOURCE': 0x0B,
-        'VOL_UP': 0x02,
-        'VOL_DOWN': 0x03,
-        'CH_UP': 0x00,
-        'CH_DOWN': 0x01,
-        'MENU': 0x43,
-        'EXIT': 0x5B,
-        'OK': 0x44,
-        'UP': 0x40,
-        'DOWN': 0x41,
-        'LEFT': 0x07,
-        'RIGHT': 0x06,
-        '0': 0x10,
-        '1': 0x11,
-        '2': 0x12,
-        '3': 0x13,
-        '4': 0x14,
-        '5': 0x15,
-        '6': 0x16,
-        '7': 0x17,
-        '8': 0x18,
-        '9': 0x19,
+        'POWER': 0x00,
+        'MUTE': 0x01,
+        'SOURCE': 0x03,
+        'VOL_UP': 0x0C,
+        'VOL_DOWN': 0x0D,
+        'CH_UP': 0x0E,
+        'CH_DOWN': 0x0F,
+        'MENU': 0x10,
+        'EXIT': 0x11,
+        'OK': 0x16,
+        'UP': 0x12,
+        'DOWN': 0x13,
+        'LEFT': 0x14,
+        'RIGHT': 0x15,
+        '0': 0x02,
+        '1': 0x04,
+        '2': 0x05,
+        '3': 0x06,
+        '4': 0x07,
+        '5': 0x08,
+        '6': 0x09,
+        '7': 0x0A,
+        '8': 0x0B,
+        '9': 0x17,
       },
     ),
-    // الخريطة 2: خريطة AMW / CVTE الأوروبية (0x00FF)
+    // 2. لوحة AMW / MStar Extended (0x02FD)
     AmwKeyMap(
-      label: "AMW 5904 - خريطة 2 (بديلة A)",
-      address: 0x00FF,
+      label: "M2: AMW-MStar (0x02FD)",
+      address: 0x02FD,
+      keys: {
+        'POWER': 0x01,
+        'MUTE': 0x00,
+        'SOURCE': 0x03,
+        'VOL_UP': 0x0F,
+        'VOL_DOWN': 0x13,
+        'CH_UP': 0x0E,
+        'CH_DOWN': 0x12,
+        'MENU': 0x0D,
+        'EXIT': 0x18,
+        'OK': 0x15,
+        'UP': 0x11,
+        'DOWN': 0x19,
+        'LEFT': 0x14,
+        'RIGHT': 0x16,
+        '0': 0x10,
+        '1': 0x04,
+        '2': 0x05,
+        '3': 0x06,
+        '4': 0x07,
+        '5': 0x08,
+        '6': 0x09,
+        '7': 0x0A,
+        '8': 0x0B,
+        '9': 0x0C,
+      },
+    ),
+    // 3. لوحة AMW / OEM-4040 (Extended NEC)
+    AmwKeyMap(
+      label: "M3: AMW-OEM (0x4040)",
+      address: 0x4040,
+      keys: {
+        'POWER': 0x0A,
+        'MUTE': 0x0C,
+        'SOURCE': 0x0B,
+        'VOL_UP': 0x1A,
+        'VOL_DOWN': 0x1E,
+        'CH_UP': 0x1B,
+        'CH_DOWN': 0x1F,
+        'MENU': 0x14,
+        'EXIT': 0x1C,
+        'OK': 0x0D,
+        'UP': 0x0B,
+        'DOWN': 0x0E,
+        'LEFT': 0x0A,
+        'RIGHT': 0x0C,
+        '0': 0x00,
+        '1': 0x01,
+        '2': 0x02,
+        '3': 0x03,
+        '4': 0x04,
+        '5': 0x05,
+        '6': 0x06,
+        '7': 0x07,
+        '8': 0x08,
+        '9': 0x09,
+      },
+    ),
+    // 4. لوحة AMW / China-01FE
+    AmwKeyMap(
+      label: "M4: AMW-China (0x01FE)",
+      address: 0x01FE,
+      keys: {
+        'POWER': 0x48,
+        'MUTE': 0x10,
+        'SOURCE': 0x18,
+        'VOL_UP': 0x1A,
+        'VOL_DOWN': 0x1E,
+        'CH_UP': 0x1B,
+        'CH_DOWN': 0x1F,
+        'MENU': 0x14,
+        'EXIT': 0x1C,
+        'OK': 0x0D,
+        'UP': 0x0B,
+        'DOWN': 0x0E,
+        'LEFT': 0x0A,
+        'RIGHT': 0x0C,
+        '0': 0x00,
+        '1': 0x01,
+        '2': 0x02,
+        '3': 0x03,
+        '4': 0x04,
+        '5': 0x05,
+        '6': 0x06,
+        '7': 0x07,
+        '8': 0x08,
+        '9': 0x09,
+      },
+    ),
+    // 5. لوحة AMW / 55AA (Extended NEC)
+    AmwKeyMap(
+      label: "M5: AMW-55AA (0x55AA)",
+      address: 0x55AA,
+      keys: {
+        'POWER': 0x01,
+        'MUTE': 0x02,
+        'SOURCE': 0x03,
+        'VOL_UP': 0x12,
+        'VOL_DOWN': 0x13,
+        'CH_UP': 0x10,
+        'CH_DOWN': 0x11,
+        'MENU': 0x14,
+        'EXIT': 0x15,
+        'OK': 0x1A,
+        'UP': 0x16,
+        'DOWN': 0x17,
+        'LEFT': 0x18,
+        'RIGHT': 0x19,
+        '0': 0x00,
+        '1': 0x04,
+        '2': 0x05,
+        '3': 0x06,
+        '4': 0x07,
+        '5': 0x08,
+        '6': 0x09,
+        '7': 0x0A,
+        '8': 0x0B,
+        '9': 0x0C,
+      },
+    ),
+    // 6. لوحة AMW / 807F مع أوامر CVTE
+    AmwKeyMap(
+      label: "M6: AMW-CVTE (0x807F)",
+      address: 0x807F,
       keys: {
         'POWER': 0x0D,
         'MUTE': 0x0E,
@@ -114,45 +236,18 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
         '9': 0x09,
       },
     ),
-    // الخريطة 3: خريطة AMW / Vestel RC5 (تردد 36kHz)
-    AmwKeyMap(
-      label: "AMW 5904 - خريطة 3 (RC5)",
-      frequency: 36000,
-      isRc5: true,
-      address: 0x00,
-      keys: {
-        'POWER': 0x0C,
-        'MUTE': 0x0D,
-        'SOURCE': 0x38,
-        'VOL_UP': 0x10,
-        'VOL_DOWN': 0x11,
-        'CH_UP': 0x20,
-        'CH_DOWN': 0x21,
-        'MENU': 0x30,
-        'EXIT': 0x37,
-        'OK': 0x35,
-        'UP': 0x14,
-        'DOWN': 0x13,
-        'LEFT': 0x15,
-        'RIGHT': 0x16,
-        '0': 0x00,
-        '1': 0x01,
-        '2': 0x02,
-        '3': 0x03,
-        '4': 0x04,
-        '5': 0x05,
-        '6': 0x06,
-        '7': 0x07,
-        '8': 0x08,
-        '9': 0x09,
-      },
-    ),
   ];
 
   @override
   void initState() {
     super.initState();
     _checkIrSensor();
+  }
+
+  @override
+  void dispose() {
+    _scanTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkIrSensor() async {
@@ -182,51 +277,8 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       frame.add(bit ? 1690 : 560);
     }
     frame.add(560);
-    return [...frame, 40000, ...frame];
-  }
-
-  List<int> _buildRc5Frame(int systemAddr, int command) {
-    List<int> bits = [
-      1,
-      (command < 64) ? 1 : 0,
-      _rc5Toggle ? 1 : 0,
-    ];
-    for (int i = 4; i >= 0; i--) {
-      bits.add((systemAddr >> i) & 1);
-    }
-    for (int i = 5; i >= 0; i--) {
-      bits.add((command >> i) & 1);
-    }
-
-    List<int> raw = [];
-    for (int b in bits) {
-      if (b == 1) {
-        raw.add(-889);
-        raw.add(889);
-      } else {
-        raw.add(889);
-        raw.add(-889);
-      }
-    }
-
-    List<int> pattern = [];
-    for (int val in raw) {
-      if (pattern.isEmpty) {
-        if (val > 0) pattern.add(val);
-        continue;
-      }
-      bool lastIsMark = pattern.length % 2 == 1;
-      bool currIsMark = val > 0;
-      if (lastIsMark == currIsMark) {
-        pattern[pattern.length - 1] += val.abs();
-      } else {
-        pattern.add(val.abs());
-      }
-    }
-    if (pattern.length % 2 == 0) {
-      pattern.removeLast();
-    }
-    return [...pattern, 88000, ...pattern];
+    // إرسال الإطار + نبضة التكرار القياسية لـ NEC (9000, 2250, 560)
+    return [...frame, 40000, 9000, 2250, 560];
   }
 
   Future<void> _sendKey(String keyName, String arabicName) async {
@@ -237,22 +289,35 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     final int? cmd = map.keys[keyName];
     if (cmd == null) return;
 
-    final List<int> pattern = map.isRc5
-        ? _buildRc5Frame(map.address, cmd)
-        : _buildNecFrame(map.address, cmd);
-
-    if (map.isRc5) {
-      _rc5Toggle = !_rc5Toggle;
-    }
+    final List<int> pattern = _buildNecFrame(map.address, cmd);
 
     try {
       await _irChannel.invokeMethod('transmit', {
         'pattern': pattern,
-        'frequency': map.frequency,
+        'frequency': 38000,
       });
-      setState(() => _status = "تم تنفيذ: $arabicName");
+      setState(() => _status = "${map.label} -> $arabicName");
     } catch (e) {
       setState(() => _status = "فشل الإرسال");
+    }
+  }
+
+  void _toggleScan() {
+    if (_isScanning) {
+      _scanTimer?.cancel();
+      setState(() {
+        _isScanning = false;
+        _status = "مثبت على: ${_amwMaps[_selectedMap].label}";
+      });
+    } else {
+      setState(() => _isScanning = true);
+      _sendKey('VOL_UP', 'رفع الصوت');
+      _scanTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+        setState(() {
+          _selectedMap = (_selectedMap + 1) % _amwMaps.length;
+        });
+        _sendKey('VOL_UP', 'رفع الصوت');
+      });
     }
   }
 
@@ -278,16 +343,28 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("AMW TV (5904)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        title: const Text("AMW TV (5904)", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1E293B),
-        centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isScanning ? Colors.red.shade700 : Colors.amber.shade700,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _toggleScan,
+              icon: Icon(_isScanning ? Icons.stop : Icons.radar, size: 18),
+              label: Text(_isScanning ? "إيقاف" : "فحص (M1-M6)"),
+            ),
+          )
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(14.0),
           child: Column(
             children: [
-              // اختيار الخريطة الدقيقة لـ AMW 5904
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
@@ -318,8 +395,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
               const SizedBox(height: 8),
               Text(_status, style: const TextStyle(fontSize: 13, color: Colors.amberAccent)),
               const SizedBox(height: 14),
-
-              // الصف العلوي: التشغيل - المصادر - كتم الصوت
               Row(
                 children: [
                   Expanded(child: _btn("POWER", "POWER", "تشغيل / إيقاف", color: Colors.red.shade700, icon: Icons.power_settings_new)),
@@ -330,8 +405,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-
-              // لوحة الأرقام
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -355,8 +428,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-
-              // الصوت + الأسهم + القنوات
               Row(
                 children: [
                   Expanded(

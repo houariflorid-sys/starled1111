@@ -32,36 +32,35 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
 
-  // عنوان شاسيه تلفاز AMW المؤكد (0x04FB بترتيب MSB-First)
   final int _address = 0x04FB;
 
-  // خريطة الأكواد الكاملة لكل زر
+  // الخريطة الزوجية الكاملة للوحة AMW / MStar (0x04FB MSB)
   final Map<String, int> _keys = const {
-    'POWER': 0x12,    // التشغيل والإيقاف
-    'SOURCE': 0x02,   // مصادر الإدخال (HDMI / PC / AV)
-    'GUIDE': 0x0A,    // دليل البرامج (EPG)
-    'MUTE': 0x1C,     // كتم الصوت
-    '1': 0x00,        // رقم 1
-    '2': 0x08,        // رقم 2
+    'POWER': 0x12,    // التشغيل والإيقاف (مؤكد 100%)
+    'SOURCE': 0x02,   // مصادر الإدخال (مؤكد 100%)
+    'GUIDE': 0x0A,    // دليل البرامج (مؤكد 100%)
+    'MUTE': 0x10,     // كتم الصوت
+    '1': 0x00,        // رقم 1 (مؤكد 100%)
+    '2': 0x08,        // رقم 2 (مؤكد 100%)
     '3': 0x04,        // رقم 3
     '4': 0x0C,        // رقم 4
-    '5': 0x10,        // رقم 5
-    '6': 0x09,        // رقم 6
-    '7': 0x05,        // رقم 7
-    '8': 0x0D,        // رقم 8
-    '9': 0x03,        // رقم 9
-    '0': 0x0F,        // رقم 0
-    'VOL_UP': 0x14,   // رفع الصوت (+)
-    'VOL_DOWN': 0x18, // خفض الصوت (-)
-    'CH_UP': 0x11,    // القناة التالية (+)
-    'CH_DOWN': 0x19,  // القناة السابقة (-)
-    'MENU': 0x1A,     // القائمة (MENU)
-    'EXIT': 0x1B,     // خروج / رجوع (EXIT)
-    'OK': 0x1F,       // تأكيد (OK)
-    'UP': 0x15,       // سهم للأعلى
-    'DOWN': 0x1D,     // سهم للأسفل
-    'LEFT': 0x17,     // سهم لليسار
-    'RIGHT': 0x16,    // سهم لليمين
+    '5': 0x14,        // رقم 5
+    '6': 0x18,        // رقم 6
+    '7': 0x1C,        // رقم 7
+    '8': 0x40,        // رقم 8
+    '9': 0x48,        // رقم 9
+    '0': 0x0E,        // رقم 0
+    'VOL_UP': 0x16,   // رفع الصوت (+)
+    'VOL_DOWN': 0x1A, // خفض الصوت (-)
+    'CH_UP': 0x06,    // القناة التالية (+)
+    'CH_DOWN': 0x1E,  // القناة السابقة (-)
+    'MENU': 0x44,     // القائمة (MENU)
+    'EXIT': 0x4C,     // خروج / رجوع (EXIT)
+    'OK': 0x54,       // تأكيد (OK)
+    'UP': 0x50,       // سهم للأعلى
+    'DOWN': 0x58,     // سهم للأسفل
+    'LEFT': 0x5C,     // سهم لليسار
+    'RIGHT': 0x52,    // سهم لليمين
   };
 
   @override
@@ -128,13 +127,16 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: color ?? const Color(0xFF1E293B),
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         onPressed: () => _sendKey(keyName, arabicLabel),
         child: icon != null
             ? Icon(icon, size: 23)
-            : Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label, maxLines: 1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              ),
       ),
     );
   }

@@ -29,14 +29,14 @@ jobs:
           sed -i 's/<application/<uses-permission android:name="android.permission.TRANSMIT_IR" \/>\n    <application/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="amw_app"/android:label="AMW Remote"/' android/app/src/main/AndroidManifest.xml
           
-          # حذف الأيقونة التكيفية الافتراضية لكي تظهر صورتك مباشرة على شاشة الهاتف
+          # حذف الأيقونة الافتراضية وتعيين صورتك كأيقونة رئيسية للتطبيق
           rm -rf android/app/src/main/res/mipmap-anydpi*
           
-          if [ -f "../icon.jpg" ] || [ -f "../icon.png" ]; then
+          if ls ../icon.* 1> /dev/null 2>&1; then
             SRC_IMG=$(ls ../icon.* | head -n 1)
             for dir in android/app/src/main/res/mipmap-*; do
               rm -f "$dir"/ic_launcher.*
-              convert "$SRC_IMG" -resize 192x192 "$dir/ic_launcher.png" 2>/dev/null || cp "$SRC_IMG" "$dir/ic_launcher.png"
+              cp "$SRC_IMG" "$dir/ic_launcher.png"
             done
           fi
           

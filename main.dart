@@ -32,36 +32,35 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
 
-  // العنوان الصحيح المستنتج من استجابة شاشتك (0x00FF)
-  // مع خيار التبديل إلى (0x00FD) في حال احتجت ذلك
-  int _address = 0x00FF;
+  // العنوان الصحيح الذي استجاب له التلفاز (0x04FB بترتيب MSB)
+  final int _address = 0x04FB;
 
-  // الخريطة الدقيقة المستنتجة رياضياً من أزرار شاشتك (كل زر في وظيفته الصحيحة)
-  final Map<String, int> _exactKeys = const {
-    'POWER': 0x0D,    // التشغيل والإيقاف
-    'MUTE': 0x0E,     // كتم الصوت
-    'SOURCE': 0xA8,   // مصادر الإدخال (HDMI / PC / AV) - تم التحقق منه من شاشتك!
-    '1': 0xC8,        // رقم 1 - تم التحقق منه من شاشتك!
-    '2': 0xB0,        // رقم 2 - تم التحقق منه من شاشتك!
-    '3': 0x70,        // رقم 3
-    '4': 0xD0,        // رقم 4
-    '5': 0x90,        // رقم 5
-    '6': 0x50,        // رقم 6
-    '7': 0xE0,        // رقم 7
-    '8': 0xA0,        // رقم 8
-    '9': 0x60,        // رقم 9
-    '0': 0x88,        // رقم 0
-    'VOL_UP': 0x15,   // رفع الصوت (+)
-    'VOL_DOWN': 0x16, // خفض الصوت (-)
-    'CH_UP': 0x13,    // القناة التالية (+)
-    'CH_DOWN': 0x14,  // القناة السابقة (-)
-    'MENU': 0x1A,     // القائمة (MENU)
-    'EXIT': 0x19,     // خروج / رجوع (EXIT)
-    'OK': 0x1F,       // تأكيد (OK)
-    'UP': 0x1B,       // سهم للأعلى
-    'DOWN': 0x1C,     // سهم للأسفل
-    'LEFT': 0x1D,     // سهم لليسار
-    'RIGHT': 0x1E,    // سهم لليمين
+  // الخريطة الدقيقة للوحة AMW (0x04FB MSB) بعد تصحيح مواقع الأزرار من تجربتك
+  final Map<String, int> _keys = const {
+    'POWER': 0x0A,    // التشغيل / الإيقاف
+    'MUTE': 0x09,     // كتم الصوت
+    'SOURCE': 0x02,   // مصادر الإدخال (HDMI / PC) - تم تأكيده من شاشتك!
+    '1': 0x00,        // رقم 1 - تم تأكيده من شاشتك!
+    '2': 0x08,        // رقم 2 - تم تأكيده من شاشتك!
+    '3': 0x04,        // رقم 3
+    '4': 0x0C,        // رقم 4
+    '5': 0x01,        // رقم 5
+    '6': 0x03,        // رقم 6
+    '7': 0x05,        // رقم 7
+    '8': 0x06,        // رقم 8
+    '9': 0x07,        // رقم 9
+    '0': 0x0B,        // رقم 0
+    'VOL_UP': 0x10,   // رفع الصوت (+)
+    'VOL_DOWN': 0x11, // خفض الصوت (-)
+    'CH_UP': 0x12,    // القناة التالية (+)
+    'CH_DOWN': 0x13,  // القناة السابقة (-)
+    'MENU': 0x14,     // القائمة (MENU)
+    'EXIT': 0x15,     // خروج / رجوع (EXIT)
+    'OK': 0x1A,       // تأكيد (OK)
+    'UP': 0x16,       // سهم للأعلى
+    'DOWN': 0x17,     // سهم للأسفل
+    'LEFT': 0x18,     // سهم لليسار
+    'RIGHT': 0x19,    // سهم لليمين
   };
 
   @override
@@ -75,43 +74,42 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       final bool hasIr = await _irChannel.invokeMethod('hasIrEmitter');
       setState(() {
         _hasIrEmitter = hasIr;
-        _status = hasIr
-            ? "جاهز - AMW TV (0x${_address.toRadixString(16).toUpperCase().padLeft(4, '0')})"
-            : "مستشعر IR غير متاح";
+        _status = hasIr ? "جاهز - AMW TV (0x04FB MSB)" : "مستشعر IR غير متاح";
       });
     } catch (e) {
       setState(() => _status = "خطأ في المستشعر");
     }
   }
 
-  /// بناء إشارة NEC القياسية بترتيب LSB الصحيح المطابق للوحة شاشتك
-  List<int> _buildExactSignal(int address, int command) {
-    List<int> frame = [9000, 4500];
-    for (int i = 0; i < 16; i++) {
-      frame.add(560);
-      bool bit = ((address >> i) & 1) == 1;
-      frame.add(bit ? 1690 : 560);
+  /// بناء إشارة NEC بترتيب MSB-First المطابق لـ A1: AMW-MSB (0x04FB)
+  List<int> _buildMsbSignal(int address, int command) {
+    List<int> f = [9000, 4500];
+    for (int i = 15; i >= 0; i--) {
+      f.add(560);
+      f.add(((address >> i) & 1) == 1 ? 1690 : 560);
     }
-    int invertedCommand = (~command) & 0xFF;
-    int fullCommand = (invertedCommand << 8) | (command & 0xFF);
-    for (int i = 0; i < 16; i++) {
-      frame.add(560);
-      bool bit = ((fullCommand >> i) & 1) == 1;
-      frame.add(bit ? 1690 : 560);
+    int inv = (~command) & 0xFF;
+    for (int i = 7; i >= 0; i--) {
+      f.add(560);
+      f.add(((command >> i) & 1) == 1 ? 1690 : 560);
     }
-    frame.add(560);
-    // إرسال الإطار مع نبضة تكرار واحدة لمنع تكرار الرقم مرتين (مثل 11 أو 22)
-    return [...frame, 40000, 9000, 2250, 560];
+    for (int i = 7; i >= 0; i--) {
+      f.add(560);
+      f.add(((inv >> i) & 1) == 1 ? 1690 : 560);
+    }
+    f.add(560);
+    // نبضة واحدة نظيفة لمنع تكرار كتابة الأرقام مرتين
+    return [...f, 40000, 9000, 2250, 560];
   }
 
   Future<void> _sendKey(String keyName, String arabicLabel) async {
     HapticFeedback.mediumImpact();
     if (!_hasIrEmitter) return;
 
-    final int? cmd = _exactKeys[keyName];
+    final int? cmd = _keys[keyName];
     if (cmd == null) return;
 
-    final List<int> pattern = _buildExactSignal(_address, cmd);
+    final List<int> pattern = _buildMsbSignal(_address, cmd);
 
     try {
       await _irChannel.invokeMethod('transmit', {
@@ -149,20 +147,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
         title: const Text("AMW Remote", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1E293B),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _address = (_address == 0x00FF) ? 0x00FD : 0x00FF;
-                _status = "العنوان: 0x${_address.toRadixString(16).toUpperCase().padLeft(4, '0')}";
-              });
-            },
-            child: Text(
-              "0x${_address.toRadixString(16).toUpperCase().padLeft(4, '0')}",
-              style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold),
-            ),
-          )
-        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -184,8 +168,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-
-              // الصف العلوي: التشغيل - المصادر - كتم الصوت
               Row(
                 children: [
                   Expanded(child: _btn("POWER", "POWER", "تشغيل / إيقاف", color: Colors.red.shade700, icon: Icons.power_settings_new)),
@@ -196,8 +178,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-
-              // لوحة الأرقام
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -221,8 +201,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-
-              // الصوت + الأسهم + القنوات
               Row(
                 children: [
                   Expanded(

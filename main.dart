@@ -32,20 +32,17 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   bool _hasIrEmitter = false;
   String _status = "جاري فحص مستشعر IR...";
 
-  // العنوان المؤكد للوحة AMW (RID: 5904) بنظام MSB-First
-  final int _address = 0x04FB;
-
-  // الخريطة الكاملة والمؤكدة عملياً من شاشتك وجدولك
+  // جميع الأكواد الـ 24 المؤكدة بنظام LSB الحقيقي (مطابقة 100% لكاشف الأكواد)
   final Map<String, int> _keys = const {
-    'POWER': 0x12,      // تشغيل / إيقاف
-    'SOURCE': 0x02,     // مصادر الإدخال (HDMI / PC / AV)
-    'GUIDE': 0x0A,      // دليل البرامج
+    'POWER': 0x48,      // تشغيل / إيقاف
+    'SOURCE': 0x40,     // مصادر الإدخال (HDMI / PC / AV)
+    'GUIDE': 0x50,      // دليل البرامج
+    'MENU': 0x4A,       // القائمة
     'MUTE': 0x0B,       // كتم الصوت
     'VOL_UP': 0x5C,     // زيادة الصوت
     'VOL_DOWN': 0x0C,   // تنقيص حجم الصوت
     'CH_UP': 0x5D,      // الانتقال إلى القناة الأعلى
     'CH_DOWN': 0x5E,    // الانتقال إلى القناة السفلى
-    'MENU': 0x52,       // القائمة
     'CH_LIST': 0x0E,    // قائمة القنوات
     'ASPECT': 0x53,     // حجم الشاشة (16:9)
     'SLEEP': 0x5A,      // وقت النوم
@@ -81,18 +78,25 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     }
   }
 
-  List<int> _buildMsbSignal(int address, int command) {
+  /// نفس دالة كاشف الأكواد تماماً (NEC LSB على العنوان 0x20DF)
+  List<int> _buildLsbSignal(int cmdLsb) {
     List<int> f = [9000, 4500];
-    for (int i = 15; i >= 0; i--) {
+    const int addr1 = 0x20;
+    const int addr2 = 0xDF;
+    for (int i = 0; i < 8; i++) {
       f.add(560);
-      f.add(((address >> i) & 1) == 1 ? 1690 : 560);
+      f.add(((addr1 >> i) & 1) == 1 ? 1690 : 560);
     }
-    int inv = (~command) & 0xFF;
-    for (int i = 7; i >= 0; i--) {
+    for (int i = 0; i < 8; i++) {
       f.add(560);
-      f.add(((command >> i) & 1) == 1 ? 1690 : 560);
+      f.add(((addr2 >> i) & 1) == 1 ? 1690 : 560);
     }
-    for (int i = 7; i >= 0; i--) {
+    int inv = (~cmdLsb) & 0xFF;
+    for (int i = 0; i < 8; i++) {
+      f.add(560);
+      f.add(((cmdLsb >> i) & 1) == 1 ? 1690 : 560);
+    }
+    for (int i = 0; i < 8; i++) {
       f.add(560);
       f.add(((inv >> i) & 1) == 1 ? 1690 : 560);
     }
@@ -107,14 +111,14 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     final int? cmd = _keys[keyName];
     if (cmd == null) return;
 
-    final List<int> pattern = _buildMsbSignal(_address, cmd);
+    final String hex = "0x${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')}";
 
     try {
       await _irChannel.invokeMethod('transmit', {
-        'pattern': pattern,
+        'pattern': _buildLsbSignal(cmd),
         'frequency': 38000,
       });
-      setState(() => _status = "$arabicLabel (0x${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')})");
+      setState(() => _status = "$arabicLabel ($hex)");
     } catch (e) {
       setState(() => _status = "فشل الإرسال");
     }
@@ -256,7 +260,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                       children: [
                         _btn("CH +", "CH_UP", "القناة الأعلى", height: 52),
                         const SizedBox(height: 10),
-                        _btn("CH -", "CH_DOWN", "القناة السفلى", height: 52),
+                        _btn("CH -", "CH_DOWN", "القناة السابقة", height: 52),
                       ],
                     ),
                   ),

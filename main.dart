@@ -35,7 +35,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   // العنوان المؤكد للوحة AMW (RID: 5904) بنظام MSB-First
   final int _address = 0x04FB;
 
-  // الخريطة الكاملة والمؤكدة عملياً من شاشتك وجدولك المكتوب
+  // الخريطة الكاملة والمؤكدة عملياً من شاشتك وجدولك
   final Map<String, int> _keys = const {
     'POWER': 0x12,      // تشغيل / إيقاف
     'SOURCE': 0x02,     // مصادر الإدخال (HDMI / PC / AV)
@@ -49,18 +49,18 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     'CH_LIST': 0x0E,    // قائمة القنوات
     'ASPECT': 0x53,     // حجم الشاشة (16:9)
     'SLEEP': 0x5A,      // وقت النوم
-    'PIC_MODE': 0x4C,   // نوع الصورة (ناعم، مستخدم، قياسي، ديناميكي)
-    'SND_MODE': 0x06,   // الصوت (فيلم، موسيقى، معيار، رياضة)
-    '0': 0x1B,          // قناة / رقم 0
-    '1': 0x00,          // قناة / رقم 1
-    '2': 0x10,          // قناة / رقم 2
-    '3': 0x11,          // قناة / رقم 3
-    '4': 0x13,          // قناة / رقم 4
-    '5': 0x14,          // قناة / رقم 5
-    '6': 0x15,          // قناة / رقم 6
-    '7': 0x17,          // قناة / رقم 7
-    '8': 0x18,          // قناة / رقم 8
-    '9': 0x19,          // قناة / رقم 9
+    'PIC_MODE': 0x4C,   // نوع الصورة
+    'SND_MODE': 0x06,   // نوع الصوت
+    '0': 0x1B,          // رقم 0
+    '1': 0x00,          // رقم 1
+    '2': 0x10,          // رقم 2
+    '3': 0x11,          // رقم 3
+    '4': 0x13,          // رقم 4
+    '5': 0x14,          // رقم 5
+    '6': 0x15,          // رقم 6
+    '7': 0x17,          // رقم 7
+    '8': 0x18,          // رقم 8
+    '9': 0x19,          // رقم 9
   };
 
   @override
@@ -74,14 +74,13 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       final bool hasIr = await _irChannel.invokeMethod('hasIrEmitter');
       setState(() {
         _hasIrEmitter = hasIr;
-        _status = hasIr ? "جاهز - AMW TV (0x04FB MSB)" : "مستشعر IR غير متاح";
+        _status = hasIr ? "جاهز - AMW TV (5904)" : "مستشعر IR غير متاح";
       });
     } catch (e) {
       setState(() => _status = "خطأ في المستشعر");
     }
   }
 
-  /// بناء إشارة NEC بترتيب MSB-First المطابق لجدول الأكواد المؤكد
   List<int> _buildMsbSignal(int address, int command) {
     List<int> f = [9000, 4500];
     for (int i = 15; i >= 0; i--) {
@@ -170,8 +169,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // الصف الأول: التشغيل - المصادر - الدليل - كتم الصوت
               Row(
                 children: [
                   Expanded(child: _btn("POWER", "POWER", "تشغيل / إيقاف", color: Colors.red.shade700, icon: Icons.power_settings_new)),
@@ -184,8 +181,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-
-              // الصف الثاني: أوضاع الشاشة والصوت والنوم وقائمة القنوات
               Row(
                 children: [
                   Expanded(child: _btn("PICTURE", "PIC_MODE", "نوع الصورة", color: const Color(0xFF273549))),
@@ -198,8 +193,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-
-              // لوحة الأرقام
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -208,23 +201,21 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 crossAxisSpacing: 8,
                 childAspectRatio: 2.2,
                 children: [
-                  _btn("1", "1", "قناة / رقم 1"),
-                  _btn("2", "2", "قناة / رقم 2"),
-                  _btn("3", "3", "قناة / رقم 3"),
-                  _btn("4", "4", "قناة / رقم 4"),
-                  _btn("5", "5", "قناة / رقم 5"),
-                  _btn("6", "6", "قناة / رقم 6"),
-                  _btn("7", "7", "قناة / رقم 7"),
-                  _btn("8", "8", "قناة / رقم 8"),
-                  _btn("9", "9", "قناة / رقم 9"),
+                  _btn("1", "1", "رقم 1"),
+                  _btn("2", "2", "رقم 2"),
+                  _btn("3", "3", "رقم 3"),
+                  _btn("4", "4", "رقم 4"),
+                  _btn("5", "5", "رقم 5"),
+                  _btn("6", "6", "رقم 6"),
+                  _btn("7", "7", "رقم 7"),
+                  _btn("8", "8", "رقم 8"),
+                  _btn("9", "9", "رقم 9"),
                   _btn("CH LIST", "CH_LIST", "قائمة القنوات", color: const Color(0xFF334155)),
-                  _btn("0", "0", "قناة / رقم 0"),
+                  _btn("0", "0", "رقم 0"),
                   _btn("MENU", "MENU", "القائمة", color: const Color(0xFF334155)),
                 ],
               ),
               const SizedBox(height: 14),
-
-              // الصوت + الأسهم + القنوات
               Row(
                 children: [
                   Expanded(

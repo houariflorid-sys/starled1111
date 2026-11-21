@@ -30,17 +30,19 @@ class AmwRemoteScreen extends StatefulWidget {
 class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
   static const MethodChannel _irChannel = MethodChannel('starled_ir_channel');
   bool _hasIrEmitter = false;
-  String _status = "جاري فحص مستشعر IR...";
+  String _statusLabel = "جاري فحص مستشعر IR...";
+  String _statusHex = "";
   int _rangeIndex = 0; // 0: 00-5F, 1: 60-AF, 2: B0-FF
   final Set<int> _testedNow = {};
   int? _lastCode;
 
-  // جميع الأكواد الـ 24 المؤكدة بنظام LSB (العنوان 0x20DF)
+  // جميع الأكواد الـ 29 المؤكدة بنظام LSB (العنوان 0x20DF)
   final Map<String, int> _keys = const {
     'POWER': 0x48,
     'SOURCE': 0x40,
     'GUIDE': 0x50,
     'MENU': 0x4A,
+    'EXIT': 0x0A,
     'MUTE': 0x0B,
     'VOL_UP': 0x5C,
     'VOL_DOWN': 0x0C,
@@ -51,6 +53,10 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     'SLEEP': 0x5A,
     'PIC_MODE': 0x4C,
     'SND_MODE': 0x06,
+    'UP': 0x4D,
+    'DOWN': 0x47,
+    'LEFT': 0x49,
+    'RIGHT': 0x4B,
     '0': 0x1B,
     '1': 0x00,
     '2': 0x10,
@@ -63,10 +69,11 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     '9': 0x19,
   };
 
-  // تمييز جميع الأكواد المؤكدة باللون الأخضر في كاشف القوائم
+  // الأكواد الـ 29 المؤكدة باللون الأخضر داخل كاشف القوائم
   final Map<int, String> _confirmedLabels = const {
     0x00: '1',
     0x06: 'SND',
+    0x0A: 'EXIT',
     0x0B: 'MUTE',
     0x0C: 'VOL-',
     0x0E: 'LIST',
@@ -80,9 +87,13 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
     0x19: '9',
     0x1B: '0',
     0x40: 'SRC',
+    0x47: 'DOWN',
     0x48: 'PWR',
+    0x49: 'LEFT',
     0x4A: 'MENU',
+    0x4B: 'RIGHT',
     0x4C: 'PIC',
+    0x4D: 'UP',
     0x50: 'EPG',
     0x53: '16:9',
     0x5A: 'SLP',
@@ -102,10 +113,14 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       final bool hasIr = await _irChannel.invokeMethod('hasIrEmitter');
       setState(() {
         _hasIrEmitter = hasIr;
-        _status = hasIr ? "جاهز - AMW TV (5904)" : "مستشعر IR غير متاح";
+        _statusLabel = hasIr ? "جاهز - AMW TV (5904)" : "مستشعر IR غير متاح";
+        _statusHex = "";
       });
     } catch (e) {
-      setState(() => _status = "خطأ في المستشعر");
+      setState(() {
+        _statusLabel = "خطأ في المستشعر";
+        _statusHex = "";
+      });
     }
   }
 
@@ -150,10 +165,14 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
           _testedNow.add(cmdLsb);
           _lastCode = cmdLsb;
         }
-        _status = "$label  |  $hex";
+        _statusLabel = label;
+        _statusHex = hex;
       });
     } catch (e) {
-      setState(() => _status = "فشل الإرسال");
+      setState(() {
+        _statusLabel = "فشل الإرسال";
+        _statusHex = "";
+      });
     }
   }
 
@@ -253,19 +272,19 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                 flex: 4,
                 child: Column(
                   children: [
-                    SizedBox(width: 70, child: _btn("UP", "CH_UP", "القناة الأعلى", icon: Icons.keyboard_arrow_up)),
+                    SizedBox(width: 70, child: _btn("UP", "UP", "أعلى في القائمة", icon: Icons.keyboard_arrow_up)),
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        Expanded(child: _btn("LEFT", "VOL_DOWN", "تنقيص الصوت", icon: Icons.keyboard_arrow_left)),
+                        Expanded(child: _btn("LEFT", "LEFT", "قمر لليسار", icon: Icons.keyboard_arrow_left)),
                         const SizedBox(width: 6),
                         Expanded(child: _btn("OK", "CH_LIST", "قائمة القنوات", color: Colors.blue.shade700)),
                         const SizedBox(width: 6),
-                        Expanded(child: _btn("RIGHT", "VOL_UP", "زيادة الصوت", icon: Icons.keyboard_arrow_right)),
+                        Expanded(child: _btn("RIGHT", "RIGHT", "قمر لليمين", icon: Icons.keyboard_arrow_right)),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    SizedBox(width: 70, child: _btn("DOWN", "CH_DOWN", "القناة السفلى", icon: Icons.keyboard_arrow_down)),
+                    SizedBox(width: 70, child: _btn("DOWN", "DOWN", "أسفل في القائمة", icon: Icons.keyboard_arrow_down)),
                   ],
                 ),
               ),
@@ -282,6 +301,11 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: _btn("EXIT  (خروج)", "EXIT", "خروج", color: Colors.deepOrange.shade800, height: 46),
+          ),
         ],
       ),
     );
@@ -295,7 +319,6 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
       padding: const EdgeInsets.all(10.0),
       child: Column(
         children: [
-          // أزرار سريعة لفتح القائمة أو قائمة القنوات أثناء الفحص
           Row(
             children: [
               Expanded(
@@ -314,13 +337,13 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
               Expanded(
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey.shade700,
+                    backgroundColor: Colors.deepOrange.shade800,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
-                  onPressed: () => _sendRawCode(0x4A, "القائمة"),
-                  icon: const Icon(Icons.menu, size: 18),
-                  label: const Text("القائمة", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  onPressed: () => _sendRawCode(0x0A, "خروج"),
+                  icon: const Icon(Icons.exit_to_app, size: 18),
+                  label: const Text("EXIT", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ),
               const SizedBox(width: 6),
@@ -371,7 +394,7 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            "افتح قائمة القنوات أولاً ثم جرّب الأزرار الزرقاء (الأخضر = محفوظ، البنفسجي = جُرّب الآن)",
+            "افتح قائمة القنوات وجرّب الأزرار الزرقاء لإيجاد OK والترتيب (A-Z) والبحث",
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: Colors.white70),
           ),
@@ -453,13 +476,24 @@ class _AmwRemoteScreenState extends State<AmwRemoteScreen> {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.tealAccent.withOpacity(0.4)),
                 ),
-                child: Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Text(
-                    _status,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 14, color: Colors.tealAccent, fontWeight: FontWeight.bold),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (_statusHex.isNotEmpty) ...[
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          _statusHex,
+                          style: const TextStyle(fontSize: 15, color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const Text("  |  ", style: TextStyle(color: Colors.white54)),
+                    ],
+                    Text(
+                      _statusLabel,
+                      style: const TextStyle(fontSize: 14, color: Colors.tealAccent, fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
